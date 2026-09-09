@@ -89,21 +89,22 @@ app.innerHTML = `
           <button data-edit-tool="pen">✎<small>ペン</small></button>
           <button data-edit-tool="highlight">▰<small>マーカー</small></button>
           <button data-edit-tool="rect">□<small>四角</small></button>
+          <button data-edit-tool="line">╱<small>直線</small></button>
           <button data-edit-tool="arrow">→<small>矢印</small></button>
           <button data-edit-tool="text">T<small>文字</small></button>
           <button data-edit-tool="crop">⌗<small>A4切取</small></button>
         </aside>
         <section class="editor-stage"><canvas id="editorCanvas"></canvas><div id="cropBox" class="crop-box" hidden><i></i></div></section>
         <aside class="editor-options">
-          <label>色<input id="editColor" type="color" value="#ef766d"></label>
+          <label>色を選択<div class="color-row"><button type="button" data-color="#ef766d" style="--sw:#ef766d"></button><button type="button" data-color="#4c86b3" style="--sw:#4c86b3"></button><button type="button" data-color="#e7c451" style="--sw:#e7c451"></button><button type="button" data-color="#629b7d" style="--sw:#629b7d"></button><button type="button" data-color="#252a2d" style="--sw:#252a2d"></button><input id="editColor" type="color" value="#ef766d" title="自由な色"></div></label>
           <label>太さ<input id="editWidth" type="range" min="2" max="18" value="5"></label>
           <label>透明度<input id="editOpacity" type="range" min="15" max="100" value="80"></label>
           <label id="textOption" hidden>文字<input id="editText" maxlength="80" placeholder="追加する文字"></label>
-          <div id="cropOptions" hidden><strong>A4比率固定</strong><label><input type="radio" name="cropOrient" value="portrait" checked>縦A4</label><label><input type="radio" name="cropOrient" value="landscape">横A4</label><button id="resetCrop" class="soft-button">範囲をリセット</button></div>
+          <div id="cropOptions" hidden><strong>A4比率固定</strong><label><input type="radio" name="cropOrient" value="portrait" checked>縦A4</label><label><input type="radio" name="cropOrient" value="landscape">横A4</label><button id="resetCrop" class="soft-button">範囲をリセット</button><button id="confirmCrop" class="soft-button primary-soft">この範囲で切り取る</button></div>
           <button id="clearEdits" class="soft-button danger">このページの加工を消す</button>
         </aside>
       </div>
-      <footer class="editor-foot"><span>ドラッグして描画・範囲指定</span><button id="applyEditor" class="primary">この加工を適用</button></footer>
+      <footer class="editor-foot"><span id="editorStatus">ドラッグして描画・範囲指定</span><div><button id="finalPreview" class="soft-button">完成プレビュー</button><button id="applyEditor" class="primary">編集内容を保存</button><button id="exportEdited" class="primary export-edit">編集済みPDFを書き出す</button></div></footer>
     </div>
   </dialog>
 `;
@@ -112,7 +113,7 @@ const el = Object.fromEntries([
   'fileInput','dropzone','pageGrid','selectionBar','selectionCount','pageCount','sizeText','warningText',
   'undoBtn','redoBtn','exportBtn','filename','toast','separatorDialog','separatorTitle','separatorSubtitle',
   'addSeparatorBtn','previewDialog','previewImage','previewLabel','pageNumbers','a4Normalize','modeGate','editorDialog',
-  'editorCanvas','cropBox','editorPageLabel','closeEditor','applyEditor','editColor','editWidth','editOpacity','editText','textOption','cropOptions','resetCrop','clearEdits'
+  'editorCanvas','cropBox','editorPageLabel','closeEditor','applyEditor','editColor','editWidth','editOpacity','editText','textOption','cropOptions','resetCrop','confirmCrop','clearEdits','finalPreview','exportEdited','editorStatus'
 ].map(id => [id, document.getElementById(id)]));
 
 const state = {
@@ -406,21 +407,27 @@ async function renderEditorPage(page) {
   const canvas = el.editorCanvas;
   const maxW = Math.min(860, window.innerWidth - 430);
   const maxH = Math.min(720, window.innerHeight - 190);
-  const ratio = page.width / page.height;
-  canvas.width = Math.round(Math.min(maxW, maxH * ratio));
-  canvas.height = Math.round(canvas.width / ratio);
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
   const image = await loadImage(page.thumbnail);
-  ctx.save();
-  ctx.translate(canvas.width / 2, canvas.height / 2);
-  ctx.rotate(page.rotation * Math.PI / 180);
   const turned = page.rotation % 180 !== 0;
-  const dw = turned ? canvas.height : canvas.width;
-  const dh = turned ? canvas.width : canvas.height;
-  ctx.drawImage(image, -dw / 2, -dh / 2, dw, dh);
-  ctx.restore();
-  drawAnnotations(ctx, state.editor.draft, canvas.width, canvas.height);
+  const sourceRatio = turned ? image.height / image.width : image.width / image.height;
+  const full = document.createElement('canvas');
+  full.width = Math.round(Math.min(maxW, maxH * sourceRatio));
+  full.height = Math.round(full.width / sourceRatio);
+  const fctx = full.getContext('2d');
+  fctx.fillStyle = '#fff'; fctx.fillRect(0, 0, full.width, full.height);
+  fctx.translate(full.width / 2, full.height / 2); fctx.rotate(page.rotation * Math.PI / 180);
+  const dw = turned ? full.height : full.width, dh = turned ? full.width : full.height;
+  fctx.drawImage(image, -dw / 2, -dh / 2, dw, dh);
+  const showCropResult = state.editor.crop && state.editor.tool !== 'crop';
+  if (showCropResult) {
+    const ratio = state.editor.crop.orientation === 'landscape' ? 297/210 : 210/297;
+    canvas.width = Math.round(Math.min(maxW, maxH * ratio)); canvas.height = Math.round(canvas.width / ratio);
+    const c = state.editor.crop;
+    canvas.getContext('2d').drawImage(full, c.x*full.width, c.y*full.height, c.w*full.width, c.h*full.height, 0, 0, canvas.width, canvas.height);
+  } else {
+    canvas.width = full.width; canvas.height = full.height; canvas.getContext('2d').drawImage(full, 0, 0);
+  }
+  drawAnnotations(canvas.getContext('2d'), state.editor.draft, canvas.width, canvas.height);
   syncCropBox();
 }
 
@@ -433,6 +440,8 @@ function drawAnnotations(ctx, annotations, width, height) {
       ctx.beginPath(); ctx.moveTo(...pts[0]); pts.slice(1).forEach(p => ctx.lineTo(...p)); ctx.stroke();
     } else if (item.type === 'rect' && pts.length > 1) {
       ctx.strokeRect(pts[0][0], pts[0][1], pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]);
+    } else if (item.type === 'line' && pts.length > 1) {
+      ctx.beginPath(); ctx.moveTo(...pts[0]); ctx.lineTo(...pts[1]); ctx.stroke();
     } else if (item.type === 'arrow' && pts.length > 1) {
       drawArrow(ctx, pts[0][0], pts[0][1], pts[1][0], pts[1][1]);
     } else if (item.type === 'text') {
@@ -498,7 +507,7 @@ function defaultCrop() {
 function applyEditor() {
   const page = state.pages.find(p => p.id === state.editor.pageId); if (!page) return;
   snapshot(); page.annotations = structuredClone(state.editor.draft); page.crop = state.editor.crop ? {...state.editor.crop} : null;
-  el.editorDialog.close(); render(); showToast('加工をページへ適用しました');
+  render(); el.editorStatus.textContent = '編集内容を保存しました。この画面のまま続けて編集できます'; showToast('編集内容を保存しました');
 }
 
 function setBusy(busy, message = '') {
@@ -523,7 +532,7 @@ async function exportPdf() {
         if ((pageData.annotations?.length || pageData.crop) && source) {
           const rendered = await renderEditedPage(pageData, source);
           const embeddedPng = await output.embedPng(rendered);
-          const landscape = pageData.crop?.orientation === 'landscape';
+          const landscape = pageData.crop ? pageData.crop.orientation === 'landscape' : ((pageData.rotation % 180 === 0) ? pageData.width > pageData.height : pageData.height > pageData.width);
           const pw = landscape ? 841.89 : 595.28;
           const ph = landscape ? 595.28 : 841.89;
           page = output.addPage([pw, ph]);
@@ -601,10 +610,10 @@ async function renderEditedPage(pageData, source) {
     const ctx = base.getContext('2d'); ctx.translate(base.width/2, base.height/2); ctx.rotate(pageData.rotation*Math.PI/180); ctx.drawImage(image,-image.width/2,-image.height/2);
     URL.revokeObjectURL(url);
   }
-  const layer = document.createElement('canvas'); layer.width=base.width; layer.height=base.height;
-  const layerCtx = layer.getContext('2d'); layerCtx.drawImage(base,0,0); drawAnnotations(layerCtx,pageData.annotations||[],layer.width,layer.height);
   const result = document.createElement('canvas'); result.width=outW; result.height=outH;
-  result.getContext('2d').drawImage(layer,crop.x*layer.width,crop.y*layer.height,crop.w*layer.width,crop.h*layer.height,0,0,outW,outH);
+  const resultCtx = result.getContext('2d');
+  resultCtx.drawImage(base,crop.x*base.width,crop.y*base.height,crop.w*base.width,crop.h*base.height,0,0,outW,outH);
+  drawAnnotations(resultCtx,pageData.annotations||[],outW,outH);
   return result.toDataURL('image/png');
 }
 
@@ -708,7 +717,11 @@ document.querySelectorAll('[data-edit-tool]').forEach(button => button.addEventL
   document.querySelectorAll('[data-edit-tool]').forEach(item => item.classList.toggle('active', item === button));
   el.textOption.hidden = state.editor.tool !== 'text';
   el.cropOptions.hidden = state.editor.tool !== 'crop';
-  syncCropBox();
+  redrawEditor();
+}));
+document.querySelectorAll('[data-color]').forEach(button => button.addEventListener('click', () => {
+  el.editColor.value = button.dataset.color;
+  document.querySelectorAll('[data-color]').forEach(item => item.classList.toggle('active', item === button));
 }));
 el.editorCanvas.addEventListener('pointerdown', beginDraw);
 el.editorCanvas.addEventListener('pointermove', moveDraw);
@@ -716,6 +729,21 @@ el.editorCanvas.addEventListener('pointerup', endDraw);
 el.editorCanvas.addEventListener('pointercancel', endDraw);
 el.closeEditor.addEventListener('click', () => el.editorDialog.close());
 el.applyEditor.addEventListener('click', applyEditor);
+el.confirmCrop.addEventListener('click', () => {
+  state.editor.tool = 'select'; el.cropOptions.hidden = true;
+  document.querySelectorAll('[data-edit-tool]').forEach(item => item.classList.toggle('active', item.dataset.editTool === 'select'));
+  el.editorStatus.textContent = '切り取り後の画面です。この状態へ文字や図を追加できます'; redrawEditor();
+});
+el.finalPreview.addEventListener('click', () => {
+  state.editor.tool = 'select'; el.cropOptions.hidden = true;
+  document.querySelectorAll('[data-edit-tool]').forEach(item => item.classList.toggle('active', item.dataset.editTool === 'select'));
+  el.editorStatus.textContent = '完成PDFと同じ切り取り・加工表示です'; redrawEditor();
+});
+el.exportEdited.addEventListener('click', async () => {
+  const page=state.pages.find(p=>p.id===state.editor.pageId); if(!page) return;
+  page.annotations=structuredClone(state.editor.draft); page.crop=state.editor.crop?{...state.editor.crop}:null;
+  await exportPdf(); el.editorStatus.textContent='編集済みPDFを書き出しました。続けて編集できます';
+});
 el.clearEdits.addEventListener('click', () => { state.editor.draft=[]; state.editor.crop=null; redrawEditor(); });
 el.resetCrop.addEventListener('click', () => { state.editor.crop=defaultCrop(); syncCropBox(); });
 document.querySelectorAll('[name="cropOrient"]').forEach(radio => radio.addEventListener('change', () => { state.editor.crop=defaultCrop(); syncCropBox(); }));
