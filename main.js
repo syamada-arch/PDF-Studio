@@ -8,9 +8,17 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 const app = document.querySelector('#app');
 
 app.innerHTML = `
+  <section id="modeGate" class="mode-gate">
+    <div class="mode-intro"><span class="mini-brand">PDF Studio v2</span><h1>今日は、なにを組み立てる？</h1><p>ファイルは端末の外へ送信されません。</p></div>
+    <div class="mode-pieces">
+      <button class="mode-piece organize-piece" data-mode="organize"><span class="piece-icon">⇅</span><strong>結合・整理</strong><small>並べ替え・削除・回転・結合</small></button>
+      <button class="mode-piece edit-piece" data-mode="edit"><span class="piece-icon">✎</span><strong>加工・編集</strong><small>文字・図形・マーカー・A4切り取り</small></button>
+    </div>
+  </section>
   <header class="topbar">
     <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>PDF Studio</span></div>
     <label class="filename-wrap"><span class="sr-only">出力ファイル名</span><input id="filename" value="結合ファイル.pdf" /></label>
+    <nav class="mode-tabs"><button data-switch="organize" class="active">結合・整理</button><button data-switch="edit">加工・編集</button></nav>
     <div class="history-actions">
       <button id="undoBtn" class="icon-btn" title="元に戻す" disabled>↶</button>
       <button id="redoBtn" class="icon-btn" title="やり直す" disabled>↷</button>
@@ -24,6 +32,7 @@ app.innerHTML = `
       <button class="tool tool-yellow shape-step" data-action="delete"><span>−</span><small>削除</small></button>
       <button class="tool tool-sage shape-wave" data-action="separator"><span>▤</span><small>区切り</small></button>
       <button class="tool tool-lilac shape-square" data-action="blank"><span>□</span><small>白紙</small></button>
+      <button class="tool tool-blue shape-round edit-only" data-action="edit"><span>✎</span><small>編集</small></button>
       <div class="dock-divider"></div>
       <label class="option-chip"><input id="pageNumbers" type="checkbox"/><span>ページ番号</span></label>
       <label class="option-chip"><input id="a4Normalize" type="checkbox"/><span>A4に統一</span></label>
@@ -70,12 +79,40 @@ app.innerHTML = `
       <p id="previewLabel"></p>
     </form>
   </dialog>
+
+  <dialog id="editorDialog" class="editor-dialog">
+    <div class="editor-card">
+      <header class="editor-head"><div><strong>ページを加工</strong><span id="editorPageLabel"></span></div><button id="closeEditor" class="dialog-close" aria-label="閉じる">×</button></header>
+      <div class="editor-body">
+        <aside class="editor-tools">
+          <button data-edit-tool="select" class="active">↖<small>選択</small></button>
+          <button data-edit-tool="pen">✎<small>ペン</small></button>
+          <button data-edit-tool="highlight">▰<small>マーカー</small></button>
+          <button data-edit-tool="rect">□<small>四角</small></button>
+          <button data-edit-tool="arrow">→<small>矢印</small></button>
+          <button data-edit-tool="text">T<small>文字</small></button>
+          <button data-edit-tool="crop">⌗<small>A4切取</small></button>
+        </aside>
+        <section class="editor-stage"><canvas id="editorCanvas"></canvas><div id="cropBox" class="crop-box" hidden><i></i></div></section>
+        <aside class="editor-options">
+          <label>色<input id="editColor" type="color" value="#ef766d"></label>
+          <label>太さ<input id="editWidth" type="range" min="2" max="18" value="5"></label>
+          <label>透明度<input id="editOpacity" type="range" min="15" max="100" value="80"></label>
+          <label id="textOption" hidden>文字<input id="editText" maxlength="80" placeholder="追加する文字"></label>
+          <div id="cropOptions" hidden><strong>A4比率固定</strong><label><input type="radio" name="cropOrient" value="portrait" checked>縦A4</label><label><input type="radio" name="cropOrient" value="landscape">横A4</label><button id="resetCrop" class="soft-button">範囲をリセット</button></div>
+          <button id="clearEdits" class="soft-button danger">このページの加工を消す</button>
+        </aside>
+      </div>
+      <footer class="editor-foot"><span>ドラッグして描画・範囲指定</span><button id="applyEditor" class="primary">この加工を適用</button></footer>
+    </div>
+  </dialog>
 `;
 
 const el = Object.fromEntries([
   'fileInput','dropzone','pageGrid','selectionBar','selectionCount','pageCount','sizeText','warningText',
   'undoBtn','redoBtn','exportBtn','filename','toast','separatorDialog','separatorTitle','separatorSubtitle',
-  'addSeparatorBtn','previewDialog','previewImage','previewLabel','pageNumbers','a4Normalize'
+  'addSeparatorBtn','previewDialog','previewImage','previewLabel','pageNumbers','a4Normalize','modeGate','editorDialog',
+  'editorCanvas','cropBox','editorPageLabel','closeEditor','applyEditor','editColor','editWidth','editOpacity','editText','textOption','cropOptions','resetCrop','clearEdits'
 ].map(id => [id, document.getElementById(id)]));
 
 const state = {
@@ -87,6 +124,8 @@ const state = {
   dragId: null,
   nextId: 1,
   busy: false,
+  mode: 'organize',
+  editor: { pageId: null, tool: 'select', draft: [], crop: null, drawing: null },
 };
 
 const connectorTypes = ['round','square','key','wave','step','dove','soft-zig','half'];
@@ -201,7 +240,7 @@ function loadImage(url) {
 function makePage(data) {
   const index = state.pages.length;
   return {
-    id: uid(), rotation: 0, kind: 'source', ...data,
+    id: uid(), rotation: 0, kind: 'source', annotations: [], crop: null, ...data,
     connector: connectorTypes[index % connectorTypes.length],
     connectorColor: connectorColors[index % connectorColors.length],
   };
@@ -280,23 +319,26 @@ function makeCard(page, index) {
   card.innerHTML = `
     <div class="connector top"></div><div class="connector right"></div><div class="connector bottom"></div><div class="connector left"></div>
     <button class="select-dot" aria-label="ページを選択">${state.selected.has(page.id) ? '✓' : ''}</button>
-    <button class="preview-button" title="拡大表示">↗</button>
+    <div class="card-actions"><button class="preview-button" title="拡大表示">↗</button><button class="edit-button" title="加工・編集">✎</button></div>
     <div class="page-paper ${page.width > page.height ? 'landscape' : ''}">${preview}</div>
     <div class="page-meta"><strong>${String(index + 1).padStart(2,'0')}</strong><span title="${escapeHtml(page.label)}">${escapeHtml(shorten(page.label, 18))}</span></div>`;
   card.addEventListener('click', event => {
     if (event.target.closest('.preview-button')) return previewPage(page, index);
+    if (event.target.closest('.edit-button')) return openEditor(page, index);
     toggleSelect(page.id, event.metaKey || event.ctrlKey || event.shiftKey);
   });
+  card.addEventListener('dblclick', () => openEditor(page, index));
   card.addEventListener('keydown', event => {
     if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleSelect(page.id, event.ctrlKey || event.metaKey || event.shiftKey); }
     if (event.key === 'Delete' || event.key === 'Backspace') deleteSelected();
   });
-  card.addEventListener('dragstart', () => { state.dragId = page.id; card.classList.add('dragging'); });
+  card.addEventListener('dragstart', event => { state.dragId = page.id; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', page.id); card.classList.add('dragging'); });
   card.addEventListener('dragend', () => { state.dragId = null; card.classList.remove('dragging'); clearDragStyles(); });
   card.addEventListener('dragover', event => { event.preventDefault(); if (state.dragId !== page.id) card.classList.add('magnet-target'); });
   card.addEventListener('dragleave', () => card.classList.remove('magnet-target'));
   card.addEventListener('drop', event => {
     event.preventDefault();
+    event.stopPropagation();
     const from = state.pages.findIndex(item => item.id === state.dragId);
     const to = state.pages.findIndex(item => item.id === page.id);
     if (from < 0 || to < 0 || from === to) return clearDragStyles();
@@ -329,6 +371,13 @@ function updateStats() {
 
 function clearDragStyles() { document.querySelectorAll('.magnet-target').forEach(node => node.classList.remove('magnet-target')); }
 
+function setMode(mode, closeGate = true) {
+  state.mode = mode;
+  document.body.dataset.mode = mode;
+  if (closeGate) el.modeGate.classList.add('closed');
+  document.querySelectorAll('[data-switch]').forEach(button => button.classList.toggle('active', button.dataset.switch === mode));
+}
+
 function previewPage(page, index) {
   if (page.thumbnail) {
     el.previewImage.src = page.thumbnail;
@@ -339,6 +388,117 @@ function previewPage(page, index) {
   }
   el.previewLabel.textContent = `${index + 1}ページ目　${page.label}`;
   el.previewDialog.showModal();
+}
+
+async function openEditor(page, index) {
+  if (!page || page.kind !== 'source') return showToast('元のPDF・画像ページを選んでください', 'warn');
+  state.editor.pageId = page.id;
+  state.editor.draft = structuredClone(page.annotations || []);
+  state.editor.crop = page.crop ? { ...page.crop } : null;
+  state.editor.tool = 'select';
+  el.editorPageLabel.textContent = `${index + 1}ページ目　${page.label}`;
+  document.querySelectorAll('[data-edit-tool]').forEach(button => button.classList.toggle('active', button.dataset.editTool === 'select'));
+  await renderEditorPage(page);
+  el.editorDialog.showModal();
+}
+
+async function renderEditorPage(page) {
+  const canvas = el.editorCanvas;
+  const maxW = Math.min(860, window.innerWidth - 430);
+  const maxH = Math.min(720, window.innerHeight - 190);
+  const ratio = page.width / page.height;
+  canvas.width = Math.round(Math.min(maxW, maxH * ratio));
+  canvas.height = Math.round(canvas.width / ratio);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const image = await loadImage(page.thumbnail);
+  ctx.save();
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate(page.rotation * Math.PI / 180);
+  const turned = page.rotation % 180 !== 0;
+  const dw = turned ? canvas.height : canvas.width;
+  const dh = turned ? canvas.width : canvas.height;
+  ctx.drawImage(image, -dw / 2, -dh / 2, dw, dh);
+  ctx.restore();
+  drawAnnotations(ctx, state.editor.draft, canvas.width, canvas.height);
+  syncCropBox();
+}
+
+function drawAnnotations(ctx, annotations, width, height) {
+  for (const item of annotations) {
+    ctx.save(); ctx.strokeStyle = item.color; ctx.fillStyle = item.color; ctx.globalAlpha = item.opacity; ctx.lineWidth = item.width; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    const pts = item.points?.map(p => [p.x * width, p.y * height]) || [];
+    if ((item.type === 'pen' || item.type === 'highlight') && pts.length) {
+      if (item.type === 'highlight') { ctx.globalCompositeOperation = 'multiply'; ctx.lineWidth = item.width * 3; }
+      ctx.beginPath(); ctx.moveTo(...pts[0]); pts.slice(1).forEach(p => ctx.lineTo(...p)); ctx.stroke();
+    } else if (item.type === 'rect' && pts.length > 1) {
+      ctx.strokeRect(pts[0][0], pts[0][1], pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]);
+    } else if (item.type === 'arrow' && pts.length > 1) {
+      drawArrow(ctx, pts[0][0], pts[0][1], pts[1][0], pts[1][1]);
+    } else if (item.type === 'text') {
+      ctx.globalAlpha = item.opacity; ctx.font = `700 ${Math.max(14, item.width * 4)}px "Noto Sans JP", sans-serif`; ctx.fillText(item.text, item.x * width, item.y * height);
+    }
+    ctx.restore();
+  }
+}
+
+function drawArrow(ctx, x1, y1, x2, y2) {
+  const angle = Math.atan2(y2-y1, x2-x1), head = 10 + ctx.lineWidth;
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x2,y2); ctx.lineTo(x2-head*Math.cos(angle-Math.PI/6),y2-head*Math.sin(angle-Math.PI/6)); ctx.lineTo(x2-head*Math.cos(angle+Math.PI/6),y2-head*Math.sin(angle+Math.PI/6)); ctx.closePath(); ctx.fill();
+}
+
+function pointerPosition(event) {
+  const rect = el.editorCanvas.getBoundingClientRect();
+  return { x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)) };
+}
+
+function beginDraw(event) {
+  if (state.editor.tool === 'select' || state.editor.tool === 'crop') return;
+  const point = pointerPosition(event);
+  if (state.editor.tool === 'text') {
+    const text = el.editText.value.trim(); if (!text) return showToast('追加する文字を入力してください', 'warn');
+    state.editor.draft.push({ type:'text', text, x:point.x, y:point.y, color:el.editColor.value, width:+el.editWidth.value, opacity:+el.editOpacity.value/100 });
+    return redrawEditor();
+  }
+  state.editor.drawing = { type:state.editor.tool, points:[point], color:el.editColor.value, width:+el.editWidth.value, opacity:+el.editOpacity.value/100 };
+  el.editorCanvas.setPointerCapture(event.pointerId);
+}
+function moveDraw(event) {
+  const item = state.editor.drawing; if (!item) return;
+  const point = pointerPosition(event);
+  if (item.type === 'pen' || item.type === 'highlight') item.points.push(point); else item.points[1] = point;
+  redrawEditor(item);
+}
+function endDraw() {
+  if (!state.editor.drawing) return;
+  state.editor.draft.push(state.editor.drawing); state.editor.drawing = null; redrawEditor();
+}
+async function redrawEditor(extra) {
+  const page = state.pages.find(p => p.id === state.editor.pageId); if (!page) return;
+  await renderEditorPage(page);
+  if (extra) drawAnnotations(el.editorCanvas.getContext('2d'), [extra], el.editorCanvas.width, el.editorCanvas.height);
+}
+
+function syncCropBox() {
+  if (state.editor.tool !== 'crop') { el.cropBox.hidden = true; return; }
+  el.cropBox.hidden = false;
+  if (!state.editor.crop) state.editor.crop = defaultCrop();
+  const c = state.editor.crop;
+  Object.assign(el.cropBox.style, { left:`${c.x*100}%`, top:`${c.y*100}%`, width:`${c.w*100}%`, height:`${c.h*100}%` });
+}
+function defaultCrop() {
+  const canvasRatio = el.editorCanvas.width / el.editorCanvas.height;
+  const portrait = document.querySelector('[name="cropOrient"]:checked')?.value !== 'landscape';
+  const target = portrait ? 210/297 : 297/210;
+  let w=.86,h=.86; if (canvasRatio > target) w = h * target / canvasRatio; else h = w * canvasRatio / target;
+  return { x:(1-w)/2, y:(1-h)/2, w, h, orientation:portrait?'portrait':'landscape' };
+}
+
+function applyEditor() {
+  const page = state.pages.find(p => p.id === state.editor.pageId); if (!page) return;
+  snapshot(); page.annotations = structuredClone(state.editor.draft); page.crop = state.editor.crop ? {...state.editor.crop} : null;
+  el.editorDialog.close(); render(); showToast('加工をページへ適用しました');
 }
 
 function setBusy(busy, message = '') {
@@ -360,6 +520,16 @@ async function exportPdf() {
       let page;
       if (pageData.kind === 'source') {
         const source = state.sources.get(pageData.sourceId);
+        if ((pageData.annotations?.length || pageData.crop) && source) {
+          const rendered = await renderEditedPage(pageData, source);
+          const embeddedPng = await output.embedPng(rendered);
+          const landscape = pageData.crop?.orientation === 'landscape';
+          const pw = landscape ? 841.89 : 595.28;
+          const ph = landscape ? 595.28 : 841.89;
+          page = output.addPage([pw, ph]);
+          page.drawImage(embeddedPng, { x: 0, y: 0, width: pw, height: ph });
+          continue;
+        }
         if (source.kind === 'pdf') {
           if (!cache.has(pageData.sourceId)) cache.set(pageData.sourceId, await PDFDocument.load(source.bytes));
           const sourcePdf = cache.get(pageData.sourceId);
@@ -409,6 +579,33 @@ async function exportPdf() {
   } finally {
     setBusy(false);
   }
+}
+
+async function renderEditedPage(pageData, source) {
+  const crop = pageData.crop || { x:0, y:0, w:1, h:1, orientation:pageData.width>pageData.height?'landscape':'portrait' };
+  const outW = crop.orientation === 'landscape' ? 1684 : 1190;
+  const outH = crop.orientation === 'landscape' ? 1190 : 1684;
+  const base = document.createElement('canvas');
+  if (source.kind === 'pdf') {
+    const pdf = await pdfjsLib.getDocument({ data: source.bytes.slice() }).promise;
+    const sourcePage = await pdf.getPage(pageData.sourcePageIndex + 1);
+    const viewport = sourcePage.getViewport({ scale: 2.2, rotation: pageData.rotation });
+    base.width = Math.ceil(viewport.width); base.height = Math.ceil(viewport.height);
+    await sourcePage.render({ canvasContext: base.getContext('2d'), viewport }).promise;
+    await pdf.destroy();
+  } else {
+    const blob = new Blob([source.bytes], { type: source.mime });
+    const url = URL.createObjectURL(blob); const image = await loadImage(url);
+    const turned = pageData.rotation % 180 !== 0;
+    base.width = turned ? image.height : image.width; base.height = turned ? image.width : image.height;
+    const ctx = base.getContext('2d'); ctx.translate(base.width/2, base.height/2); ctx.rotate(pageData.rotation*Math.PI/180); ctx.drawImage(image,-image.width/2,-image.height/2);
+    URL.revokeObjectURL(url);
+  }
+  const layer = document.createElement('canvas'); layer.width=base.width; layer.height=base.height;
+  const layerCtx = layer.getContext('2d'); layerCtx.drawImage(base,0,0); drawAnnotations(layerCtx,pageData.annotations||[],layer.width,layer.height);
+  const result = document.createElement('canvas'); result.width=outW; result.height=outH;
+  result.getContext('2d').drawImage(layer,crop.x*layer.width,crop.y*layer.height,crop.w*layer.width,crop.h*layer.height,0,0,outW,outH);
+  return result.toDataURL('image/png');
 }
 
 function drawEmbeddedOnA4(output, embedded, rotation) {
@@ -487,6 +684,10 @@ document.querySelectorAll('[data-action]').forEach(button => button.addEventList
   if (action === 'delete') deleteSelected();
   if (action === 'separator') openSeparatorDialog();
   if (action === 'blank') addBlank();
+  if (action === 'edit') {
+    const page = state.pages.find(item => state.selected.has(item.id)) || state.pages[0];
+    if (page) openEditor(page, state.pages.indexOf(page)); else showToast('先にPDFまたは画像を追加してください', 'warn');
+  }
 }));
 document.querySelectorAll('[data-selection]').forEach(button => button.addEventListener('click', () => {
   const action = button.dataset.selection;
@@ -500,12 +701,48 @@ el.undoBtn.addEventListener('click', undo);
 el.redoBtn.addEventListener('click', redo);
 el.exportBtn.addEventListener('click', exportPdf);
 el.addSeparatorBtn.addEventListener('click', event => { event.preventDefault(); addSeparator(); el.separatorDialog.close(); });
+document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
+document.querySelectorAll('[data-switch]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.switch)));
+document.querySelectorAll('[data-edit-tool]').forEach(button => button.addEventListener('click', () => {
+  state.editor.tool = button.dataset.editTool;
+  document.querySelectorAll('[data-edit-tool]').forEach(item => item.classList.toggle('active', item === button));
+  el.textOption.hidden = state.editor.tool !== 'text';
+  el.cropOptions.hidden = state.editor.tool !== 'crop';
+  syncCropBox();
+}));
+el.editorCanvas.addEventListener('pointerdown', beginDraw);
+el.editorCanvas.addEventListener('pointermove', moveDraw);
+el.editorCanvas.addEventListener('pointerup', endDraw);
+el.editorCanvas.addEventListener('pointercancel', endDraw);
+el.closeEditor.addEventListener('click', () => el.editorDialog.close());
+el.applyEditor.addEventListener('click', applyEditor);
+el.clearEdits.addEventListener('click', () => { state.editor.draft=[]; state.editor.crop=null; redrawEditor(); });
+el.resetCrop.addEventListener('click', () => { state.editor.crop=defaultCrop(); syncCropBox(); });
+document.querySelectorAll('[name="cropOrient"]').forEach(radio => radio.addEventListener('change', () => { state.editor.crop=defaultCrop(); syncCropBox(); }));
+let cropDrag = null;
+el.cropBox.addEventListener('pointerdown', event => {
+  event.preventDefault(); const rect=el.editorCanvas.getBoundingClientRect(); cropDrag={x:event.clientX,y:event.clientY,start:{...state.editor.crop},rect,resize:event.target.tagName==='I'}; el.cropBox.setPointerCapture(event.pointerId);
+});
+el.cropBox.addEventListener('pointermove', event => {
+  if (!cropDrag) return; const dx=(event.clientX-cropDrag.x)/cropDrag.rect.width,dy=(event.clientY-cropDrag.y)/cropDrag.rect.height;
+  if (cropDrag.resize) {
+    const screenRatio = cropDrag.start.w * cropDrag.rect.width / (cropDrag.start.h * cropDrag.rect.height);
+    let w=Math.max(.12,Math.min(1-cropDrag.start.x,cropDrag.start.w+dx)); let h=w*cropDrag.rect.width/(screenRatio*cropDrag.rect.height);
+    if (h>1-cropDrag.start.y) { h=1-cropDrag.start.y; w=h*screenRatio*cropDrag.rect.height/cropDrag.rect.width; }
+    state.editor.crop.w=w; state.editor.crop.h=h;
+  } else {
+    state.editor.crop.x=Math.max(0,Math.min(1-state.editor.crop.w,cropDrag.start.x+dx)); state.editor.crop.y=Math.max(0,Math.min(1-state.editor.crop.h,cropDrag.start.y+dy));
+  }
+  syncCropBox();
+});
+el.cropBox.addEventListener('pointerup',()=>cropDrag=null);
+el.cropBox.addEventListener('pointercancel',()=>cropDrag=null);
 document.addEventListener('keydown', event => {
   const modifier = navigator.platform.includes('Mac') ? event.metaKey : event.ctrlKey;
   if (modifier && event.key.toLowerCase() === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo(); }
   if (modifier && event.key.toLowerCase() === 'y') { event.preventDefault(); redo(); }
 });
-['dragenter','dragover'].forEach(name => document.addEventListener(name, event => { event.preventDefault(); document.body.classList.add('file-hover'); }));
-['dragleave','drop'].forEach(name => document.addEventListener(name, event => { event.preventDefault(); if (name === 'drop') addFiles(event.dataTransfer.files); document.body.classList.remove('file-hover'); }));
+['dragenter','dragover'].forEach(name => document.addEventListener(name, event => { event.preventDefault(); if (event.dataTransfer?.types?.includes('Files')) document.body.classList.add('file-hover'); }));
+['dragleave','drop'].forEach(name => document.addEventListener(name, event => { event.preventDefault(); if (name === 'drop' && !state.dragId && event.dataTransfer?.files?.length) addFiles(event.dataTransfer.files); document.body.classList.remove('file-hover'); }));
 
 render();
