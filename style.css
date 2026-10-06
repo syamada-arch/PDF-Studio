@@ -455,3 +455,9 @@ dialog{border-radius:18px;box-shadow:0 30px 100px rgba(18,20,20,.22)}
 /* Busy + validation polish */
 .busy-overlay{backdrop-filter:blur(3px)}
 .tool:disabled,.primary:disabled,.secondary:disabled{opacity:.55;cursor:not-allowed}
+
+.page-card{transition:transform .18s ease,box-shadow .18s ease,opacity .18s ease}
+.page-card.dragging{opacity:.48;transform:scale(.98) rotate(-.5deg)}
+.page-card.magnet-target{transform:translateY(-5px);box-shadow:0 0 0 2px var(--pp-accent),0 14px 30px rgba(0,0,0,.08)}
+.page-card.snap-in{animation:pageSnap .32s ease-out}
+@keyframes pageSnap{0%{transform:scale(.96)}65%{transform:scale(1.025)}100%{transform:scale(1)}}
