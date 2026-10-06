@@ -9,11 +9,27 @@ const app = document.querySelector('#app');
 
 app.innerHTML = `
   <section id="modeGate" class="mode-gate">
-    <div class="mode-intro"><span class="mini-brand">PAPER PUNCH</span><h1>PDFを、もっと自由に。</h1><p>編集・OCR・変換・整理まで、ブラウザでサッと。</p></div>
-    <div class="mode-pieces">
-      <button class="mode-piece organize-piece" data-mode="organize"><span class="piece-icon">⇅</span><strong>結合・整理</strong><small>並べ替え・削除・回転・結合</small></button>
-      <button class="mode-piece edit-piece" data-mode="edit"><span class="piece-icon">✎</span><strong>加工・編集</strong><small>文字・図形・マーカー・A4切り取り</small></button>
+    <div class="mode-intro">
+      <span class="mini-brand">PAPER PUNCH</span>
+      <div class="mascot-stage" aria-hidden="true">
+        <div class="mascot-placeholder rabbit">🐇</div>
+        <div class="mascot-placeholder turtle">🐢</div>
+      </div>
+      <h1>PDFを、もっと自由に。</h1>
+      <p>編集・OCR・変換・整理まで、ブラウザでサッと。</p>
     </div>
+    <div class="mode-pieces">
+      <button class="mode-piece organize-piece" data-mode="organize">
+        <span class="piece-icon">↕</span><strong>結合・整理</strong><small>ページを並べる、削除する、回転する。複数PDFもひとつに。</small>
+      </button>
+      <button class="mode-piece edit-piece" data-mode="edit">
+        <span class="piece-icon">✎</span><strong>加工・編集</strong><small>文字、線、図形、マーカー。ページをその場で加工。</small>
+      </button>
+    </div>
+    <div class="pp-feature-row" aria-label="主な機能">
+      <span>PDF編集</span><span>画像→PDF</span><span>結合・分割</span><span>OCR</span><span>圧縮</span>
+    </div>
+    <p class="pp-local-note">ファイルはまずブラウザ上で処理。気軽に始められます。</p>
   </section>
   <header class="topbar">
     <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>PAPER PUNCH</span></div>
