@@ -934,9 +934,11 @@ async function applyAutoTrim() {
   try {
     const canvas = await pageToCanvas({...page, imageAdjust:{brightness:100,contrast:100,grayscale:0,trim:null}});
     const trim = autoTrimCanvas(canvas);
+    pushHistory();
     state.pages.filter(p=>state.selected.has(p.id)).forEach(p => {
       p.imageAdjust={...(p.imageAdjust||{}),trim};
     });
+    render();
     showToast('自動余白カットを設定しました');
   } catch(e) {
     console.error(e); showToast('余白の解析に失敗しました','error');
@@ -1207,7 +1209,13 @@ el.correctContrast.addEventListener('input', updateCorrectionLabels);
 el.correctGray.addEventListener('input', updateCorrectionLabels);
 el.correctDocument.addEventListener('click', applyDocumentPreset);
 el.correctReset.addEventListener('click', () => {
-  el.correctBrightness.value=100; el.correctContrast.value=100; el.correctGray.value=0; updateCorrectionLabels();
+  el.correctBrightness.value=100; el.correctContrast.value=100; el.correctGray.value=0;
+  const pages=state.pages.filter(page=>state.selected.has(page.id));
+  pushHistory();
+  pages.forEach(page=>{ page.imageAdjust={brightness:100,contrast:100,grayscale:0,trim:null}; });
+  updateCorrectionLabels();
+  render();
+  showToast('補正を元に戻しました');
 });
 el.correctTrim.addEventListener('click', applyAutoTrim);
 el.correctApply.addEventListener('click', applyCorrection);
