@@ -280,7 +280,30 @@ function formatBytes(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-async function addFiles(files) {
+async 
+function validateFiles(files) {
+  const allowed = new Set(['application/pdf','image/jpeg','image/png','image/webp']);
+  const maxSize = 100 * 1024 * 1024;
+  const accepted=[], rejected=[];
+  for (const file of Array.from(files || [])) {
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    const okType = allowed.has(file.type) || ['pdf','jpg','jpeg','png','webp'].includes(ext);
+    if (!okType) { rejected.push(\`\${file.name}: 対応していない形式\`); continue; }
+    if (file.size > maxSize) { rejected.push(\`\${file.name}: 100MBを超えています\`); continue; }
+    accepted.push(file);
+  }
+  return {accepted,rejected};
+}
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes)) return '';
+  const units=['B','KB','MB','GB'];
+  let value=bytes, i=0;
+  while(value>=1024 && i<units.length-1){value/=1024;i++;}
+  return \`\${value.toFixed(value>=10||i===0?0:1)} \${units[i]}\`;
+}
+
+function addFiles(files) {
   const accepted = [...files].filter(file => file.type === 'application/pdf' || ['image/jpeg','image/png'].includes(file.type));
   if (!accepted.length) return showToast('PDF・JPEG・PNGを選んでください', 'warn');
   snapshot();
