@@ -1089,7 +1089,9 @@ async function exportPageImage(format) {
     let dataUrl;
     if (page.kind === 'source') {
       const source = state.sources.get(page.sourceId);
-      if (page.annotations?.length || page.crop) {
+      const adjust = getAdjust(page);
+      const hasAdjust = adjust.trim || adjust.brightness !== 100 || adjust.contrast !== 100 || adjust.grayscale;
+      if (page.annotations?.length || page.crop || hasAdjust) {
         dataUrl = await renderEditedPage(page, source);
       } else if (source.kind === 'pdf') {
         const pdf = await pdfjsLib.getDocument({ data: source.bytes.slice() }).promise;
