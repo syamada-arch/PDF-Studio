@@ -737,6 +737,10 @@ function setProgress(current, total, label) {
   document.body.dataset.progress = message;
   const status = document.querySelector('.busy-message, #busyMessage');
   if (status) status.textContent = message;
+  el.toast.textContent = message;
+  el.toast.dataset.tone = 'normal';
+  el.toast.classList.add('show');
+  clearTimeout(showToast.timer);
 }
 
 function updateCompressLabels() {
@@ -1066,7 +1070,7 @@ async function runOcr() {
     for (let i = 0; i < pages.length; i++) {
       el.ocrProgress.textContent = `ページ ${i + 1} / ${pages.length}`;
       const canvas = prepareOcrCanvas(await pageToCanvas(pages[i]));
-      const { data } = await worker.recognize(canvas);
+      const { data } = await worker.recognize(canvas, { rotateAuto: true });
       const text = (data.text || '').trim();
       chunks.push(`--- ${i + 1}ページ目 ---\\n${text || '（文字を検出できませんでした）'}`);
       el.ocrResult.value = chunks.join('\\n\\n');
