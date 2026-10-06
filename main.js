@@ -49,6 +49,7 @@ app.innerHTML = `
       <button class="tool tool-sage shape-wave" data-action="separator"><span>▤</span><small>区切り</small></button>
       <button class="tool tool-lilac shape-square" data-action="blank"><span>□</span><small>白紙</small></button>
       <button class="tool tool-sage shape-wave" data-action="split"><span>⇱</span><small>分割</small></button>
+      <button class="tool tool-lilac shape-square" data-action="ocr"><span>A</span><small>OCR</small></button>
       <button class="tool tool-blue shape-round edit-only" data-action="edit"><span>✎</span><small>編集</small></button>
       <div class="dock-divider"></div>
       <label class="option-chip"><input id="pageNumbers" type="checkbox"/><span>ページ番号</span></label>
@@ -103,6 +104,17 @@ app.innerHTML = `
     </form>
   </dialog>
 
+  <dialog id="ocrDialog">
+    <form method="dialog" class="dialog-card ocr-card">
+      <button class="dialog-close" value="cancel" aria-label="閉じる">×</button>
+      <div class="ocr-head"><div><span class="mini-brand">PAPER PUNCH OCR</span><h2>画像の文字を読み取る</h2></div><div id="ocrProgress" class="ocr-progress">待機中</div></div>
+      <p id="ocrSummary" class="dialog-note">選択したページをOCRします。PDFもページ画像として読み取れます。</p>
+      <div class="ocr-result-wrap"><textarea id="ocrResult" placeholder="ここに認識した文字が表示されます。" spellcheck="false"></textarea></div>
+      <div class="dialog-actions"><button id="ocrCopy" type="button" class="secondary">コピー</button><button id="ocrDownload" type="button" class="secondary">TXT保存</button><button id="ocrRun" type="button" class="primary">OCRを開始</button></div>
+      <p class="dialog-hint">初回だけOCRエンジンと言語データをブラウザへ読み込みます。処理中は少し時間がかかります。</p>
+    </form>
+  </dialog>
+
   <dialog id="previewDialog">
     <form method="dialog" class="preview-card">
       <button class="dialog-close" value="cancel" aria-label="閉じる">×</button>
@@ -143,7 +155,7 @@ app.innerHTML = `
 const el = Object.fromEntries([
   'fileInput','dropzone','pageGrid','selectionBar','selectionCount','pageCount','sizeText','warningText',
   'undoBtn','redoBtn','exportBtn','filename','toast','separatorDialog','separatorTitle','separatorSubtitle',
-  'addSeparatorBtn','splitDialog','splitSummary','splitSelectedPdf','exportJpg','exportPng','previewDialog','previewImage','previewLabel','pageNumbers','a4Normalize','modeGate','editorDialog',
+  'addSeparatorBtn','splitDialog','splitSummary','splitSelectedPdf','exportJpg','exportPng','ocrDialog','ocrSummary','ocrProgress','ocrResult','ocrRun','ocrCopy','ocrDownload','previewDialog','previewImage','previewLabel','pageNumbers','a4Normalize','modeGate','editorDialog',
   'editorCanvas','cropBox','editorPageLabel','closeEditor','applyEditor','editColor','editWidth','editOpacity','editText','textOption','cropOptions','resetCrop','confirmCrop','clearEdits','finalPreview','exportEdited','editorStatus'
 ].map(id => [id, document.getElementById(id)]));
 
@@ -645,6 +657,100 @@ async function exportPdf(pages = state.pages, filename = el.filename.value) {
   }
 }
 
+let ocrWorker = null;
+
+async function getOcrWorker() {
+  if (!window.Tesseract) throw new Error('OCRエンジンを読み込めませんでした');
+  if (ocrWorker) return ocrWorker;
+  setMascot('work');
+  el.ocrProgress.textContent = 'OCRエンジンを準備中…';
+  ocrWorker = await Tesseract.createWorker('jpn+eng', 1, {
+    logger: message => {
+      if (message?.status) {
+        const percent = typeof message.progress === 'number' ? ` ${Math.round(message.progress * 100)}%` : '';
+        el.ocrProgress.textContent = message.status + percent;
+      }
+    }
+  });
+  return ocrWorker;
+}
+
+async function pageToCanvas(page) {
+  const canvas = document.createElement('canvas');
+  if (page.kind !== 'source') {
+    canvas.width = 1240; canvas.height = 1754;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (page.kind === 'separator') {
+      const image = await loadImage(makeSeparatorPng(page.title, page.subtitle));
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    }
+    return canvas;
+  }
+  const source = state.sources.get(page.sourceId);
+  if (!source) throw new Error('元ファイルが見つかりません');
+  if (source.kind === 'pdf') {
+    const pdf = await pdfjsLib.getDocument({ data: source.bytes.slice() }).promise;
+    const pdfPage = await pdf.getPage(page.sourcePageIndex + 1);
+    const viewport = pdfPage.getViewport({ scale: 2.5, rotation: page.rotation });
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    await pdfPage.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    await pdf.destroy();
+    return canvas;
+  }
+  const blob = new Blob([source.bytes], { type: source.mime });
+  const url = URL.createObjectURL(blob);
+  const image = await loadImage(url);
+  const turned = page.rotation % 180 !== 0;
+  canvas.width = turned ? image.height : image.width;
+  canvas.height = turned ? image.width : image.height;
+  const ctx = canvas.getContext('2d');
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate(page.rotation * Math.PI / 180);
+  ctx.drawImage(image, -image.width / 2, -image.height / 2);
+  URL.revokeObjectURL(url);
+  return canvas;
+}
+
+async function runOcr() {
+  const pages = state.pages.filter(page => state.selected.has(page.id));
+  if (!pages.length) {
+    showToast('OCRするページを選択してください', 'warn');
+    return;
+  }
+  el.ocrResult.value = '';
+  el.ocrSummary.textContent = `${pages.length}ページをOCRしています…`;
+  el.ocrRun.disabled = true;
+  setBusy(true, 'OCRしています…');
+  setMascot('work');
+  try {
+    const worker = await getOcrWorker();
+    const chunks = [];
+    for (let i = 0; i < pages.length; i++) {
+      el.ocrProgress.textContent = `ページ ${i + 1} / ${pages.length}`;
+      const canvas = await pageToCanvas(pages[i]);
+      const { data } = await worker.recognize(canvas);
+      chunks.push(`--- ${i + 1}ページ目 ---\\n${(data.text || '').trim()}`);
+      el.ocrResult.value = chunks.join('\\n\\n');
+      el.ocrResult.scrollTop = el.ocrResult.scrollHeight;
+    }
+    el.ocrSummary.textContent = `${pages.length}ページのOCRが完了しました。`;
+    el.ocrProgress.textContent = '完了';
+    setMascot('done', { hold: 1800 });
+    showToast('OCRが完了しました');
+  } catch (error) {
+    console.error(error);
+    el.ocrProgress.textContent = 'エラー';
+    el.ocrSummary.textContent = 'OCRに失敗しました。通信状態やページ内容を確認してください。';
+    setMascot('error', { hold: 2200 });
+    showToast('OCRに失敗しました', 'error');
+  } finally {
+    el.ocrRun.disabled = false;
+    setBusy(false);
+  }
+}
+
 async function exportSelectedPdf() {
   const pages = state.pages.filter(page => state.selected.has(page.id));
   if (!pages.length) return showToast('PDFにするページを選択してください', 'warn');
@@ -817,6 +923,13 @@ document.querySelectorAll('[data-action]').forEach(button => button.addEventList
   if (action === 'delete') deleteSelected();
   if (action === 'separator') openSeparatorDialog();
   if (action === 'blank') addBlank();
+  if (action === 'ocr') {
+    if (!state.selected.size) return showToast('OCRするページを選択してください', 'warn');
+    el.ocrSummary.textContent = `${state.selected.size}ページをOCRできます。`;
+    el.ocrProgress.textContent = '待機中';
+    el.ocrResult.value = '';
+    el.ocrDialog.showModal();
+  }
   if (action === 'split') {
     el.splitSummary.textContent = state.selected.size
       ? `${state.selected.size}ページ選択中。選択ページをPDFにできます。`
@@ -841,6 +954,22 @@ el.redoBtn.addEventListener('click', redo);
 el.exportBtn.addEventListener('click', exportPdf);
 el.addSeparatorBtn.addEventListener('click', event => { event.preventDefault(); addSeparator(); el.separatorDialog.close(); });
 el.splitSelectedPdf.addEventListener('click', async () => { el.splitDialog.close(); await exportSelectedPdf(); });
+el.ocrRun.addEventListener('click', runOcr);
+el.ocrCopy.addEventListener('click', async () => {
+  if (!el.ocrResult.value) return showToast('コピーする文字がありません', 'warn');
+  await navigator.clipboard.writeText(el.ocrResult.value);
+  showToast('OCR結果をコピーしました');
+});
+el.ocrDownload.addEventListener('click', () => {
+  if (!el.ocrResult.value) return showToast('保存する文字がありません', 'warn');
+  const blob = new Blob([el.ocrResult.value], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = 'PAPER-PUNCH-OCR.txt';
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
 el.exportJpg.addEventListener('click', async () => { el.splitDialog.close(); await exportPageImage('jpg'); });
 el.exportPng.addEventListener('click', async () => { el.splitDialog.close(); await exportPageImage('png'); });
 document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => { setMascot('action', { hold: 1200 }); setMode(button.dataset.mode); }));
