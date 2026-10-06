@@ -12,8 +12,8 @@ app.innerHTML = `
     <div class="mode-intro">
       <span class="mini-brand">PAPER PUNCH</span>
       <div class="mascot-stage" aria-hidden="true">
-        <div class="mascot-placeholder rabbit">🐇</div>
-        <div class="mascot-placeholder turtle">🐢</div>
+        <div class="mascot-figure rabbit" data-mascot="rabbit"><span class="mascot-fallback">🐇</span></div>
+        <div class="mascot-figure turtle" data-mascot="turtle"><span class="mascot-fallback">🐢</span></div>
       </div>
       <h1>PDFを、もっと自由に。</h1>
       <p>編集・OCR・変換・整理まで、ブラウザでサッと。</p>
@@ -110,7 +110,7 @@ app.innerHTML = `
           <button data-edit-tool="text">T<small>文字</small></button>
           <button data-edit-tool="crop">⌗<small>A4切取</small></button>
         </aside>
-        <section class="editor-stage"><canvas id="editorCanvas"></canvas><div class="editor-mascot" aria-hidden="true">🐢</div><div id="cropBox" class="crop-box" hidden><i></i></div></section>
+        <section class="editor-stage"><canvas id="editorCanvas"></canvas><div class="editor-mascot mascot-figure turtle" data-mascot="turtle" aria-hidden="true"><span class="mascot-fallback">🐢</span></div><div id="cropBox" class="crop-box" hidden><i></i></div></section>
         <aside class="editor-options">
           <label>色を選択<div class="color-row"><button type="button" data-color="#ef766d" style="--sw:#ef766d"></button><button type="button" data-color="#4c86b3" style="--sw:#4c86b3"></button><button type="button" data-color="#e7c451" style="--sw:#e7c451"></button><button type="button" data-color="#629b7d" style="--sw:#629b7d"></button><button type="button" data-color="#252a2d" style="--sw:#252a2d"></button><input id="editColor" type="color" value="#ef766d" title="自由な色"></div></label>
           <label>太さ<input id="editWidth" type="range" min="2" max="18" value="5"></label>
@@ -159,7 +159,8 @@ function snapshot() {
 function restore(pages) {
   state.pages = pages.map(page => ({ ...page }));
   state.selected.clear();
-  render();
+  setMascot('idle');
+render();
 }
 function undo() {
   if (!state.history.length) return;
@@ -186,6 +187,23 @@ function showToast(message, tone = 'normal') {
   showToast.timer = setTimeout(() => el.toast.classList.remove('show'), 2400);
 }
 
+const mascotFrames = {
+  rabbit: { idle: 0, receive: 1, work: 2, done: 3, error: 4, confused: 5, action: 6, calm: 7 },
+  turtle: { idle: 8, receive: 9, work: 10, done: 11, calm: 12, happy: 13, celebrate: 14, look: 15 },
+};
+
+function setMascot(state = 'idle', { hold = 0 } = {}) {
+  document.querySelectorAll('[data-mascot]').forEach(figure => {
+    const kind = figure.dataset.mascot;
+    const frame = mascotFrames[kind]?.[state] ?? mascotFrames[kind]?.idle ?? 0;
+    figure.dataset.state = state;
+    figure.style.setProperty('--mascot-frame', frame);
+  });
+  clearTimeout(setMascot.timer);
+  if (hold) setMascot.timer = setTimeout(() => setMascot('idle'), hold);
+}
+
+
 function formatBytes(bytes) {
   if (!bytes) return '0 MB';
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -196,8 +214,10 @@ async function addFiles(files) {
   const accepted = [...files].filter(file => file.type === 'application/pdf' || ['image/jpeg','image/png'].includes(file.type));
   if (!accepted.length) return showToast('PDF・JPEG・PNGを選んでください', 'warn');
   snapshot();
+  setMascot('receive');
   setBusy(true, 'ページを読み込んでいます…');
   try {
+    setMascot('work');
     for (const file of accepted) {
       const sourceId = uid('source');
       const bytes = new Uint8Array(await file.arrayBuffer());
@@ -205,9 +225,11 @@ async function addFiles(files) {
       else await addImageSource(sourceId, file, bytes);
     }
     render();
-    showToast(`${accepted.length}ファイルを追加しました`);
+    setMascot('done', { hold: 1800 });
+    showToast(accepted.length + 'ファイルを追加しました');
   } catch (error) {
     console.error(error);
+    setMascot('error', { hold: 2200 });
     showToast('読み込めないファイルがありました', 'error');
   } finally {
     setBusy(false);
@@ -726,7 +748,7 @@ el.undoBtn.addEventListener('click', undo);
 el.redoBtn.addEventListener('click', redo);
 el.exportBtn.addEventListener('click', exportPdf);
 el.addSeparatorBtn.addEventListener('click', event => { event.preventDefault(); addSeparator(); el.separatorDialog.close(); });
-document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
+document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => { setMascot('action', { hold: 1200 }); setMode(button.dataset.mode); }));
 document.querySelectorAll('[data-switch]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.switch)));
 document.querySelectorAll('[data-edit-tool]').forEach(button => button.addEventListener('click', () => {
   state.editor.tool = button.dataset.editTool;
@@ -786,7 +808,7 @@ document.addEventListener('keydown', event => {
   if (modifier && event.key.toLowerCase() === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo(); }
   if (modifier && event.key.toLowerCase() === 'y') { event.preventDefault(); redo(); }
 });
-['dragenter','dragover'].forEach(name => document.addEventListener(name, event => { event.preventDefault(); if (event.dataTransfer?.types?.includes('Files')) document.body.classList.add('file-hover'); }));
-['dragleave','drop'].forEach(name => document.addEventListener(name, event => { event.preventDefault(); if (name === 'drop' && !state.dragId && event.dataTransfer?.files?.length) addFiles(event.dataTransfer.files); document.body.classList.remove('file-hover'); }));
+['dragenter','dragover'].forEach(name => document.addEventListener(name, event => { event.preventDefault(); if (event.dataTransfer?.types?.includes('Files')) { document.body.classList.add('file-hover'); setMascot('receive'); } }));
+['dragleave','drop'].forEach(name => document.addEventListener(name, event => { event.preventDefault(); if (name === 'drop' && !state.dragId && event.dataTransfer?.files?.length) addFiles(event.dataTransfer.files); document.body.classList.remove('file-hover'); if (name === 'dragleave' && !state.busy) setMascot('idle'); }));
 
 render();
