@@ -9,14 +9,14 @@ const app = document.querySelector('#app');
 
 app.innerHTML = `
   <section id="modeGate" class="mode-gate">
-    <div class="mode-intro"><span class="mini-brand">PDF Studio v2</span><h1>今日は、なにを組み立てる？</h1><p>ファイルは端末の外へ送信されません。</p></div>
+    <div class="mode-intro"><span class="mini-brand">PAPER PUNCH</span><h1>PDFを、もっと自由に。</h1><p>編集・OCR・変換・整理まで、ブラウザでサッと。</p></div>
     <div class="mode-pieces">
       <button class="mode-piece organize-piece" data-mode="organize"><span class="piece-icon">⇅</span><strong>結合・整理</strong><small>並べ替え・削除・回転・結合</small></button>
       <button class="mode-piece edit-piece" data-mode="edit"><span class="piece-icon">✎</span><strong>加工・編集</strong><small>文字・図形・マーカー・A4切り取り</small></button>
     </div>
   </section>
   <header class="topbar">
-    <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>PDF Studio</span></div>
+    <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>PAPER PUNCH</span></div>
     <label class="filename-wrap"><span class="sr-only">出力ファイル名</span><input id="filename" value="結合ファイル.pdf" /></label>
     <nav class="mode-tabs"><button data-switch="organize" class="active">結合・整理</button><button data-switch="edit">加工・編集</button></nav>
     <div class="history-actions">
@@ -41,7 +41,7 @@ app.innerHTML = `
     <section class="canvas-shell">
       <div id="dropzone" class="empty-state">
         <button id="heroAdd" class="add-module" aria-label="PDFまたは画像を追加"><span>＋</span></button>
-        <h1>ページを、組み立てよう。</h1>
+        <h1>ファイルを放り込んで、はじめよう。</h1>
         <p>PDF・JPEG・PNGをここにドロップ</p>
         <button id="chooseBtn" class="text-button">ファイルを選ぶ</button>
       </div>
@@ -94,7 +94,7 @@ app.innerHTML = `
           <button data-edit-tool="text">T<small>文字</small></button>
           <button data-edit-tool="crop">⌗<small>A4切取</small></button>
         </aside>
-        <section class="editor-stage"><canvas id="editorCanvas"></canvas><div id="cropBox" class="crop-box" hidden><i></i></div></section>
+        <section class="editor-stage"><canvas id="editorCanvas"></canvas><div class="editor-mascot" aria-hidden="true">🐢</div><div id="cropBox" class="crop-box" hidden><i></i></div></section>
         <aside class="editor-options">
           <label>色を選択<div class="color-row"><button type="button" data-color="#ef766d" style="--sw:#ef766d"></button><button type="button" data-color="#4c86b3" style="--sw:#4c86b3"></button><button type="button" data-color="#e7c451" style="--sw:#e7c451"></button><button type="button" data-color="#629b7d" style="--sw:#629b7d"></button><button type="button" data-color="#252a2d" style="--sw:#252a2d"></button><input id="editColor" type="color" value="#ef766d" title="自由な色"></div></label>
           <label>太さ<input id="editWidth" type="range" min="2" max="18" value="5"></label>
