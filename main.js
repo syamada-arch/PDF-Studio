@@ -50,6 +50,7 @@ app.innerHTML = `
       <button class="tool tool-lilac shape-square" data-action="blank"><span>□</span><small>白紙</small></button>
       <button class="tool tool-sage shape-wave" data-action="split"><span>⇱</span><small>分割</small></button>
       <button class="tool tool-lilac shape-square" data-action="ocr"><span>A</span><small>OCR</small></button>
+      <button class="tool tool-coral shape-key" data-action="correct"><span>✦</span><small>補正</small></button>
       <button class="tool tool-blue shape-round edit-only" data-action="edit"><span>✎</span><small>編集</small></button>
       <div class="dock-divider"></div>
       <label class="option-chip"><input id="pageNumbers" type="checkbox"/><span>ページ番号</span></label>
@@ -104,6 +105,26 @@ app.innerHTML = `
     </form>
   </dialog>
 
+  <dialog id="correctDialog">
+    <form method="dialog" class="dialog-card correct-card">
+      <button class="dialog-close" value="cancel" aria-label="閉じる">×</button>
+      <div class="ocr-head"><div><span class="mini-brand">PAPER PUNCH SCAN</span><h2>書類をきれいにする</h2></div></div>
+      <p id="correctSummary" class="dialog-note">選択したページに画像補正を適用します。</p>
+      <div class="preset-row">
+        <button type="button" id="correctDocument" class="secondary">書類くっきり</button>
+        <button type="button" id="correctReset" class="secondary">元に戻す</button>
+        <button type="button" id="correctTrim" class="secondary">自動余白カット</button>
+      </div>
+      <div class="correct-controls">
+        <label>明るさ <input id="correctBrightness" type="range" min="70" max="135" value="100"><output id="correctBrightnessValue">100</output></label>
+        <label>コントラスト <input id="correctContrast" type="range" min="70" max="160" value="100"><output id="correctContrastValue">100</output></label>
+        <label>白黒寄り <input id="correctGray" type="range" min="0" max="100" value="0"><output id="correctGrayValue">0</output></label>
+      </div>
+      <p class="dialog-hint">補正はブラウザ上で処理され、元ファイル自体は変更しません。</p>
+      <div class="dialog-actions"><button id="correctApply" type="button" class="primary">選択ページに適用</button></div>
+    </form>
+  </dialog>
+
   <dialog id="ocrDialog">
     <form method="dialog" class="dialog-card ocr-card">
       <button class="dialog-close" value="cancel" aria-label="閉じる">×</button>
@@ -155,7 +176,7 @@ app.innerHTML = `
 const el = Object.fromEntries([
   'fileInput','dropzone','pageGrid','selectionBar','selectionCount','pageCount','sizeText','warningText',
   'undoBtn','redoBtn','exportBtn','filename','toast','separatorDialog','separatorTitle','separatorSubtitle',
-  'addSeparatorBtn','splitDialog','splitSummary','splitSelectedPdf','exportJpg','exportPng','ocrDialog','ocrSummary','ocrProgress','ocrResult','ocrRun','ocrCopy','ocrDownload','previewDialog','previewImage','previewLabel','pageNumbers','a4Normalize','modeGate','editorDialog',
+  'addSeparatorBtn','splitDialog','splitSummary','splitSelectedPdf','exportJpg','exportPng','correctDialog','correctSummary','correctBrightness','correctBrightnessValue','correctContrast','correctContrastValue','correctGray','correctGrayValue','correctDocument','correctReset','correctTrim','correctApply','ocrDialog','ocrSummary','ocrProgress','ocrResult','ocrRun','ocrCopy','ocrDownload','previewDialog','previewImage','previewLabel','pageNumbers','a4Normalize','modeGate','editorDialog',
   'editorCanvas','cropBox','editorPageLabel','closeEditor','applyEditor','editColor','editWidth','editOpacity','editText','textOption','cropOptions','resetCrop','confirmCrop','clearEdits','finalPreview','exportEdited','editorStatus'
 ].map(id => [id, document.getElementById(id)]));
 
@@ -294,6 +315,47 @@ async function addImageSource(sourceId, file, bytes) {
   const image = await loadImage(url);
   state.sources.set(sourceId, { kind: 'image', bytes, mime: file.type, name: file.name, size: file.size, width: image.naturalWidth, height: image.naturalHeight });
   state.pages.push(makePage({ sourceId, sourcePageIndex: 0, thumbnail: url, width: image.naturalWidth, height: image.naturalHeight, label: file.name }));
+}
+
+function getAdjust(page) {
+  return page.imageAdjust || { brightness:100, contrast:100, grayscale:0, trim:null };
+}
+
+function applyImageAdjustments(canvas, adjust) {
+  const a = adjust || {};
+  const brightness = Number(a.brightness ?? 100);
+  const contrast = Number(a.contrast ?? 100);
+  const grayscale = Number(a.grayscale ?? 0);
+  if (brightness === 100 && contrast === 100 && grayscale === 0) return canvas;
+  const out = document.createElement('canvas');
+  out.width = canvas.width; out.height = canvas.height;
+  const ctx = out.getContext('2d');
+  ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) grayscale(${grayscale}%)`;
+  ctx.drawImage(canvas, 0, 0);
+  return out;
+}
+
+function autoTrimCanvas(canvas) {
+  const ctx = canvas.getContext('2d', { willReadFrequently:true });
+  const { width, height } = canvas;
+  const step = Math.max(2, Math.floor(Math.min(width, height) / 500));
+  const data = ctx.getImageData(0,0,width,height).data;
+  const threshold = 245;
+  let minX=width, minY=height, maxX=-1, maxY=-1;
+  for (let y=0; y<height; y+=step) {
+    for (let x=0; x<width; x+=step) {
+      const i=(y*width+x)*4;
+      const v=(data[i]+data[i+1]+data[i+2])/3;
+      if (v < threshold || data[i+3] < 245) {
+        if(x<minX)minX=x; if(x>maxX)maxX=x; if(y<minY)minY=y; if(y>maxY)maxY=y;
+      }
+    }
+  }
+  if (maxX < 0) return {x:0,y:0,w:1,h:1};
+  const pad = Math.max(2, Math.round(Math.min(width,height)*0.01));
+  minX=Math.max(0,minX-pad); minY=Math.max(0,minY-pad);
+  maxX=Math.min(width-1,maxX+pad); maxY=Math.min(height-1,maxY+pad);
+  return {x:minX/width,y:minY/height,w:(maxX-minX+1)/width,h:(maxY-minY+1)/height};
 }
 
 function loadImage(url) {
@@ -596,7 +658,7 @@ async function exportPdf(pages = state.pages, filename = el.filename.value) {
       let page;
       if (pageData.kind === 'source') {
         const source = state.sources.get(pageData.sourceId);
-        if ((pageData.annotations?.length || pageData.crop) && source) {
+        if ((pageData.annotations?.length || pageData.crop || pageData.imageAdjust?.trim || pageData.imageAdjust?.brightness !== 100 || pageData.imageAdjust?.contrast !== 100 || pageData.imageAdjust?.grayscale) && source) {
           const rendered = await renderEditedPage(pageData, source);
           const embeddedPng = await output.embedPng(rendered);
           const landscape = pageData.crop ? pageData.crop.orientation === 'landscape' : ((pageData.rotation % 180 === 0) ? pageData.width > pageData.height : pageData.height > pageData.width);
@@ -697,7 +759,7 @@ async function pageToCanvas(page) {
     canvas.height = Math.ceil(viewport.height);
     await pdfPage.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
     await pdf.destroy();
-    return canvas;
+    return applyImageAdjustments(canvas, getAdjust(page));
   }
   const blob = new Blob([source.bytes], { type: source.mime });
   const url = URL.createObjectURL(blob);
@@ -710,7 +772,63 @@ async function pageToCanvas(page) {
   ctx.rotate(page.rotation * Math.PI / 180);
   ctx.drawImage(image, -image.width / 2, -image.height / 2);
   URL.revokeObjectURL(url);
-  return canvas;
+  return applyImageAdjustments(canvas, getAdjust(page));
+}
+
+async function openCorrectionDialog() {
+  const pages = state.pages.filter(page => state.selected.has(page.id));
+  if (!pages.length) return showToast('補正するページを選択してください', 'warn');
+  el.correctSummary.textContent = `${pages.length}ページに補正を適用できます。`;
+  const a = getAdjust(pages[0]);
+  el.correctBrightness.value = a.brightness;
+  el.correctContrast.value = a.contrast;
+  el.correctGray.value = a.grayscale;
+  updateCorrectionLabels();
+  el.correctDialog.showModal();
+}
+
+function updateCorrectionLabels() {
+  el.correctBrightnessValue.textContent = el.correctBrightness.value;
+  el.correctContrastValue.textContent = el.correctContrast.value;
+  el.correctGrayValue.textContent = el.correctGray.value;
+}
+
+async function applyCorrection() {
+  const pages = state.pages.filter(page => state.selected.has(page.id));
+  if (!pages.length) return showToast('補正するページを選択してください', 'warn');
+  const adjust = {
+    brightness:Number(el.correctBrightness.value),
+    contrast:Number(el.correctContrast.value),
+    grayscale:Number(el.correctGray.value),
+    trim:null
+  };
+  pushHistory();
+  pages.forEach(page => { page.imageAdjust = {...(page.imageAdjust || {}), ...adjust}; });
+  el.correctDialog.close();
+  render();
+  setMascot('done', { hold: 1200 });
+  showToast(`${pages.length}ページに画像補正を適用しました`);
+}
+
+async function applyDocumentPreset() {
+  el.correctBrightness.value=106; el.correctContrast.value=132; el.correctGray.value=35;
+  updateCorrectionLabels();
+}
+
+async function applyAutoTrim() {
+  const page = state.pages.find(p => state.selected.has(p.id));
+  if (!page) return;
+  setBusy(true,'余白を解析しています…');
+  try {
+    const canvas = await pageToCanvas({...page, imageAdjust:{brightness:100,contrast:100,grayscale:0,trim:null}});
+    const trim = autoTrimCanvas(canvas);
+    state.pages.filter(p=>state.selected.has(p.id)).forEach(p => {
+      p.imageAdjust={...(p.imageAdjust||{}),trim};
+    });
+    showToast('自動余白カットを設定しました');
+  } catch(e) {
+    console.error(e); showToast('余白の解析に失敗しました','error');
+  } finally { setBusy(false); }
 }
 
 async function runOcr() {
@@ -821,7 +939,9 @@ async function exportPageImage(format) {
 }
 
 async function renderEditedPage(pageData, source) {
-  const crop = pageData.crop || { x:0, y:0, w:1, h:1, orientation:pageData.width>pageData.height?'landscape':'portrait' };
+  const adjust = getAdjust(pageData);
+  const crop = pageData.crop || (adjust.trim || { x:0, y:0, w:1, h:1 });
+  crop.orientation = crop.orientation || (pageData.width>pageData.height?'landscape':'portrait');
   const outW = crop.orientation === 'landscape' ? 1684 : 1190;
   const outH = crop.orientation === 'landscape' ? 1190 : 1684;
   const base = document.createElement('canvas');
@@ -840,9 +960,10 @@ async function renderEditedPage(pageData, source) {
     const ctx = base.getContext('2d'); ctx.translate(base.width/2, base.height/2); ctx.rotate(pageData.rotation*Math.PI/180); ctx.drawImage(image,-image.width/2,-image.height/2);
     URL.revokeObjectURL(url);
   }
+  const adjusted = applyImageAdjustments(base, adjust);
   const result = document.createElement('canvas'); result.width=outW; result.height=outH;
   const resultCtx = result.getContext('2d');
-  resultCtx.drawImage(base,crop.x*base.width,crop.y*base.height,crop.w*base.width,crop.h*base.height,0,0,outW,outH);
+  resultCtx.drawImage(adjusted,crop.x*adjusted.width,crop.y*adjusted.height,crop.w*adjusted.width,crop.h*adjusted.height,0,0,outW,outH);
   drawAnnotations(resultCtx,pageData.annotations||[],outW,outH);
   return result.toDataURL('image/png');
 }
@@ -923,6 +1044,9 @@ document.querySelectorAll('[data-action]').forEach(button => button.addEventList
   if (action === 'delete') deleteSelected();
   if (action === 'separator') openSeparatorDialog();
   if (action === 'blank') addBlank();
+  if (action === 'correct') {
+    openCorrectionDialog();
+  }
   if (action === 'ocr') {
     if (!state.selected.size) return showToast('OCRするページを選択してください', 'warn');
     el.ocrSummary.textContent = `${state.selected.size}ページをOCRできます。`;
@@ -954,6 +1078,15 @@ el.redoBtn.addEventListener('click', redo);
 el.exportBtn.addEventListener('click', exportPdf);
 el.addSeparatorBtn.addEventListener('click', event => { event.preventDefault(); addSeparator(); el.separatorDialog.close(); });
 el.splitSelectedPdf.addEventListener('click', async () => { el.splitDialog.close(); await exportSelectedPdf(); });
+el.correctBrightness.addEventListener('input', updateCorrectionLabels);
+el.correctContrast.addEventListener('input', updateCorrectionLabels);
+el.correctGray.addEventListener('input', updateCorrectionLabels);
+el.correctDocument.addEventListener('click', applyDocumentPreset);
+el.correctReset.addEventListener('click', () => {
+  el.correctBrightness.value=100; el.correctContrast.value=100; el.correctGray.value=0; updateCorrectionLabels();
+});
+el.correctTrim.addEventListener('click', applyAutoTrim);
+el.correctApply.addEventListener('click', applyCorrection);
 el.ocrRun.addEventListener('click', runOcr);
 el.ocrCopy.addEventListener('click', async () => {
   if (!el.ocrResult.value) return showToast('コピーする文字がありません', 'warn');
