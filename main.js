@@ -170,13 +170,13 @@ app.innerHTML = `
       <header class="editor-head"><div><strong>ページを加工</strong><span id="editorPageLabel"></span></div><button id="closeEditor" class="dialog-close" aria-label="閉じる">×</button></header>
       <div class="editor-body">
         <aside class="editor-tools">
-          <button data-edit-tool="select" class="active">↖<small>選択</small></button>
+          <button data-edit-tool="select" class="active" title="選択・確認">↖<small>選択</small></button>
           <button data-edit-tool="pen">✎<small>ペン</small></button>
           <button data-edit-tool="highlight">▰<small>マーカー</small></button>
           <button data-edit-tool="rect">□<small>四角</small></button>
           <button data-edit-tool="line">╱<small>直線</small></button>
           <button data-edit-tool="arrow">→<small>矢印</small></button>
-          <button data-edit-tool="text">T<small>文字</small></button>
+          <button data-edit-tool="text" title="入力欄の文字をページに追加">T<small>文字</small></button>
           <button data-edit-tool="crop">⌗<small>A4切取</small></button>
         </aside>
         <section class="editor-stage"><canvas id="editorCanvas"></canvas><div class="editor-mascot mascot-figure turtle" data-mascot="turtle" aria-hidden="true"><span class="mascot-fallback">🐢</span></div><div id="cropBox" class="crop-box" hidden><i></i></div></section>
@@ -189,7 +189,7 @@ app.innerHTML = `
           <button id="clearEdits" class="soft-button danger">このページの加工を消す</button>
         </aside>
       </div>
-      <footer class="editor-foot"><span id="editorStatus">ドラッグして描画・範囲指定</span><div><button id="finalPreview" class="soft-button">完成プレビュー</button><button id="applyEditor" class="primary">編集内容を保存</button><button id="exportEdited" class="primary export-edit">編集済みPDFを書き出す</button></div></footer>
+      <footer class="editor-foot"><span id="editorStatus">ツールを選んで、ページ上で操作できます</span><div><button id="finalPreview" class="soft-button">完成プレビュー</button><button id="applyEditor" class="primary">編集内容を保存</button><button id="exportEdited" class="primary export-edit">編集済みPDFを書き出す</button></div></footer>
     </div>
   </dialog>
 `;
@@ -605,6 +605,9 @@ async function openEditor(page, index) {
   state.editor.tool = 'select';
   el.editorPageLabel.textContent = `${index + 1}ページ目　${page.label}`;
   document.querySelectorAll('[data-edit-tool]').forEach(button => button.classList.toggle('active', button.dataset.editTool === 'select'));
+  el.textOption.hidden = true;
+  el.cropOptions.hidden = true;
+  el.editorStatus.textContent = 'ツールを選んで、ページ上で操作できます';
   await renderEditorPage(page);
   el.editorDialog.showModal();
 }
@@ -670,10 +673,12 @@ function pointerPosition(event) {
 
 function beginDraw(event) {
   if (state.editor.tool === 'select' || state.editor.tool === 'crop') return;
+  if (event.pointerType === 'mouse' && event.button !== 0) return;
   const point = pointerPosition(event);
   if (state.editor.tool === 'text') {
     const text = el.editText.value.trim(); if (!text) return showToast('追加する文字を入力してください', 'warn');
     state.editor.draft.push({ type:'text', text, x:point.x, y:point.y, color:el.editColor.value, width:+el.editWidth.value, opacity:+el.editOpacity.value/100 });
+    el.editorStatus.textContent = '文字を追加しました。続けて配置できます';
     return redrawEditor();
   }
   state.editor.drawing = { type:state.editor.tool, points:[point], color:el.editColor.value, width:+el.editWidth.value, opacity:+el.editOpacity.value/100 };
@@ -713,7 +718,7 @@ function defaultCrop() {
 function applyEditor() {
   const page = state.pages.find(p => p.id === state.editor.pageId); if (!page) return;
   snapshot(); page.annotations = structuredClone(state.editor.draft); page.crop = state.editor.crop ? {...state.editor.crop} : null;
-  render(); el.editorStatus.textContent = '編集内容を保存しました。この画面のまま続けて編集できます'; showToast('編集内容を保存しました');
+  render(); el.editorStatus.textContent = '保存しました。続けて編集できます'; setMascot('done', { hold: 1200 }); showToast('編集内容を保存しました');
 }
 
 function setBusy(busy, message = '') {
