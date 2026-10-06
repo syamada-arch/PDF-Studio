@@ -330,16 +330,38 @@ dialog{border-radius:18px;box-shadow:0 30px 100px rgba(18,20,20,.22)}
 .soft-button{border-radius:9px}
 .export-edit{background:var(--pp-accent)!important;border-color:var(--pp-accent)!important}
 
-/* mascot placeholders: temporary until supplied sprite is wired */
+/* Mascot sprite system — 4x4 source sheet: rabbit rows 1-2, turtle rows 3-4 */
 .mascot-stage{height:126px;width:330px;position:relative;margin-bottom:0}
-.mascot-placeholder{
-  position:absolute;font-size:66px;
+.mascot-figure{
+  --mascot-frame:0;
+  position:absolute;
+  width:118px;height:118px;
+  background-image:url('/assets/mascots.png');
+  background-repeat:no-repeat;
+  background-size:400% 400%;
+  background-position:
+    calc((var(--mascot-frame) % 4) * 33.333333%)
+    calc(floor(var(--mascot-frame) / 4) * 33.333333%);
   filter:drop-shadow(0 8px 3px rgba(20,20,20,.12));
-  animation:pp-float 2.8s ease-in-out infinite
+  animation:pp-mascot-float 2.8s ease-in-out infinite;
 }
-.mascot-placeholder.rabbit{left:42px}
-.mascot-placeholder.turtle{right:42px;bottom:0}
-@keyframes pp-float{0%,100%{translate:0 0}50%{translate:0 -6px}}
+.mascot-figure.rabbit{left:34px;top:0}
+.mascot-figure.turtle{right:34px;bottom:0}
+.mascot-fallback{display:grid;place-items:center;width:100%;height:100%;font-size:66px}
+.mascot-figure[data-state="work"]{animation:pp-mascot-work .7s ease-in-out infinite alternate}
+.mascot-figure[data-state="receive"]{animation:pp-mascot-receive .5s ease-in-out infinite alternate}
+.mascot-figure[data-state="done"],.mascot-figure[data-state="celebrate"]{animation:pp-mascot-done .45s ease-out 2}
+.mascot-figure[data-state="error"],.mascot-figure[data-state="confused"]{animation:pp-mascot-error .35s ease-in-out 3}
+@keyframes pp-mascot-float{0%,100%{translate:0 0}50%{translate:0 -5px}}
+@keyframes pp-mascot-work{from{translate:0 2px;rotate:-1deg}to{translate:0 -4px;rotate:1deg}}
+@keyframes pp-mascot-receive{from{translate:0 0;scale:1}to{translate:0 -5px;scale:1.035}}
+@keyframes pp-mascot-done{0%{translate:0 0;scale:1}50%{translate:0 -9px;scale:1.07}100%{translate:0 0;scale:1}}
+@keyframes pp-mascot-error{0%,100%{rotate:0}50%{rotate:-5deg}}
+.editor-mascot.mascot-figure{width:82px;height:82px;right:12px;bottom:12px;left:auto;top:auto;opacity:.82;filter:drop-shadow(0 4px 2px rgba(0,0,0,.12))}
+.editor-mascot .mascot-fallback{font-size:38px}
+@media(prefers-reduced-motion:reduce){
+  .mascot-figure{animation:none!important}
+}
 
 @media(max-height:760px){
   .mode-piece{height:160px}
