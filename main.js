@@ -29,7 +29,7 @@ app.innerHTML = `
     <div class="pp-feature-row" aria-label="主な機能">
       <span>PDF編集</span><span>画像→PDF</span><span>結合・分割</span><span>OCR</span><span>圧縮</span>
     </div>
-    <p class="pp-local-note">ファイルはまずブラウザ上で処理。気軽に始められます。</p>
+    <p class="pp-local-note"><strong>ファイルはアップロードしません。</strong> まずブラウザ上で処理します。</p>
   </section>
   <header class="topbar">
     <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>PAPER PUNCH</span></div>
@@ -500,7 +500,7 @@ function makeCard(page, index) {
   card.setAttribute('aria-label', `${index + 1}ページ目 ${page.label}`);
   if (state.selected.has(page.id)) card.classList.add('selected');
   const preview = page.kind === 'source'
-    ? `<img src="${page.thumbnail}" alt="" style="transform:rotate(${page.rotation}deg)"/>`
+    ? `<img src="${page.thumbnail}" alt="" loading="lazy" decoding="async" style="transform:rotate(${page.rotation}deg)"/>`
     : page.kind === 'separator'
       ? `<div class="generated-page separator-preview"><span>SECTION</span><h3>${escapeHtml(page.title)}</h3><p>${escapeHtml(page.subtitle || '')}</p></div>`
       : `<div class="generated-page blank-preview"><span>BLANK</span></div>`;
