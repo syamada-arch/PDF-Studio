@@ -198,6 +198,8 @@ function setMascot(state = 'idle', { hold = 0 } = {}) {
     const frame = mascotFrames[kind]?.[state] ?? mascotFrames[kind]?.idle ?? 0;
     figure.dataset.state = state;
     figure.style.setProperty('--mascot-frame', frame);
+    figure.style.setProperty('--mascot-x', `${(frame % 4) * 33.333333}%`);
+    figure.style.setProperty('--mascot-y', `${Math.floor(frame / 4) * 33.333333}%`);
   });
   clearTimeout(setMascot.timer);
   if (hold) setMascot.timer = setTimeout(() => setMascot('idle'), hold);
