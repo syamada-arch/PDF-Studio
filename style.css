@@ -467,3 +467,27 @@ dialog{border-radius:18px;box-shadow:0 30px 100px rgba(18,20,20,.22)}
 .selection-bar button{transition:transform .16s ease,background .16s ease}.selection-bar button:hover{transform:translateY(-1px);background:#f1f4f2}
 .page-card:focus-visible{outline:3px solid #82b5d8;outline-offset:7px;border-radius:12px}
 @media (prefers-reduced-motion: reduce){.page-card,.selection-bar button{transition:none!important}.page-card.snap-in{animation:none}}
+
+@media (max-width:760px){
+  body{min-width:0;overflow:hidden}
+  .mode-gate{padding:24px 16px;gap:24px;overflow:auto}
+  .mode-intro h1{font-size:32px}
+  .mode-pieces{width:100%;gap:10px}
+  .mode-piece{width:calc(50vw - 22px);height:190px;padding:18px 14px}
+  .mode-piece strong{font-size:21px}.mode-piece small{font-size:12px;line-height:1.5}
+  .organize-piece,.edit-piece{margin:0;border-radius:22px;clip-path:none}
+  .pp-feature-row{flex-wrap:wrap;justify-content:center}
+  .topbar{height:auto;min-height:70px;grid-template-columns:1fr auto;grid-template-areas:"brand history" "file file" "tabs tabs";gap:8px;padding:10px 14px}
+  .brand{font-size:20px;gap:9px}.brand-mark{width:27px;height:27px}
+  .filename-wrap{grid-area:file}.filename-wrap input{font-size:15px;padding:9px 10px}
+  .mode-tabs{grid-area:tabs;justify-content:center}.history-actions{grid-area:history}
+  .workspace{display:flex;flex-direction:column;height:calc(100vh - 164px)}
+  .tool-dock{order:2;height:78px;display:flex;gap:8px;padding:9px 12px;overflow-x:auto;overflow-y:hidden;border-right:0;border-top:1px solid #dfe2df}
+  .tool{flex:0 0 88px;width:88px;min-height:58px;margin:0;padding:7px 8px;grid-template-columns:28px 1fr;border-radius:13px}
+  .tool span{font-size:21px}.tool small{font-size:11px}.dock-divider{display:none}.option-chip{flex:0 0 auto;margin:0 4px;white-space:nowrap}
+  .canvas-shell{order:1;min-height:0;padding:18px 12px 80px}
+  .page-grid{width:100%;padding:8px 0 40px}.page-card{width:min(92vw,520px)}
+  .selection-bar{left:10px;right:10px;bottom:10px;overflow-x:auto;white-space:nowrap}
+  .bottombar{height:62px;padding:8px 12px}.stats{font-size:11px}.export-btn{padding:11px 13px}
+  .dialog-card{width:min(94vw,560px);max-height:88vh;overflow:auto}
+}
