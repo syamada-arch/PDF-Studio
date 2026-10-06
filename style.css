@@ -450,3 +450,8 @@ dialog{border-radius:18px;box-shadow:0 30px 100px rgba(18,20,20,.22)}
   .mode-pieces{display:grid}
   .mode-piece{width:min(310px,90vw)}
 }
+
+
+/* Busy + validation polish */
+.busy-overlay{backdrop-filter:blur(3px)}
+.tool:disabled,.primary:disabled,.secondary:disabled{opacity:.55;cursor:not-allowed}
