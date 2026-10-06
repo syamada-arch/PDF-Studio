@@ -446,10 +446,10 @@ function animateLastPage() {
   requestAnimationFrame(() => el.pageGrid.lastElementChild?.classList.add('snap-in'));
 }
 
-function toggleSelect(id, additive) {
+function toggleSelect(id, additive, range = false) {
   const index = state.pages.findIndex(page => page.id === id);
   const lastIndex = state.pages.findIndex(page => page.id === state.lastSelectedId);
-  const isRange = additive && index >= 0 && lastIndex >= 0 && state.lastSelectedId !== id && event?.shiftKey;
+  const isRange = range && additive && index >= 0 && lastIndex >= 0 && state.lastSelectedId !== id;
   if (isRange) {
     state.selected.clear();
     const [start, end] = index < lastIndex ? [index, lastIndex] : [lastIndex, index];
@@ -513,11 +513,11 @@ function makeCard(page, index) {
   card.addEventListener('click', event => {
     if (event.target.closest('.preview-button')) return previewPage(page, index);
     if (event.target.closest('.edit-button')) return openEditor(page, index);
-    toggleSelect(page.id, event.metaKey || event.ctrlKey || event.shiftKey);
+    toggleSelect(page.id, event.metaKey || event.ctrlKey || event.shiftKey, event.shiftKey);
   });
   card.addEventListener('dblclick', () => openEditor(page, index));
   card.addEventListener('keydown', event => {
-    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleSelect(page.id, event.ctrlKey || event.metaKey || event.shiftKey); }
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleSelect(page.id, event.ctrlKey || event.metaKey || event.shiftKey, event.shiftKey); }
     if (event.key === 'Delete' || event.key === 'Backspace') deleteSelected();
   });
   card.addEventListener('dragstart', event => {
