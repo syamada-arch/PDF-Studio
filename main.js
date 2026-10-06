@@ -48,6 +48,7 @@ app.innerHTML = `
       <button class="tool tool-yellow shape-step" data-action="delete"><span>−</span><small>削除</small></button>
       <button class="tool tool-sage shape-wave" data-action="separator"><span>▤</span><small>区切り</small></button>
       <button class="tool tool-lilac shape-square" data-action="blank"><span>□</span><small>白紙</small></button>
+      <button class="tool tool-sage shape-wave" data-action="split"><span>⇱</span><small>分割</small></button>
       <button class="tool tool-blue shape-round edit-only" data-action="edit"><span>✎</span><small>編集</small></button>
       <div class="dock-divider"></div>
       <label class="option-chip"><input id="pageNumbers" type="checkbox"/><span>ページ番号</span></label>
@@ -85,6 +86,20 @@ app.innerHTML = `
       <label>タイトル<input id="separatorTitle" maxlength="60" placeholder="付録1　分析記録" /></label>
       <label>補足<input id="separatorSubtitle" maxlength="90" placeholder="必要な場合のみ" /></label>
       <div class="dialog-actions"><button value="cancel" class="secondary">キャンセル</button><button id="addSeparatorBtn" value="default" class="primary">追加する</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="splitDialog">
+    <form method="dialog" class="dialog-card">
+      <button class="dialog-close" value="cancel" aria-label="閉じる">×</button>
+      <h2>分割・変換</h2>
+      <p id="splitSummary" class="dialog-note">ページを選択すると、そのページだけを書き出せます。</p>
+      <div class="split-actions">
+        <button id="splitSelectedPdf" type="button" class="primary">選択ページをPDFにする</button>
+        <button id="exportJpg" type="button" class="secondary">表示ページをJPGにする</button>
+        <button id="exportPng" type="button" class="secondary">表示ページをPNGにする</button>
+      </div>
+      <p class="dialog-hint">複数ページのPDFを分けたい場合は、ページを選択して「選択ページをPDFにする」を使います。</p>
     </form>
   </dialog>
 
@@ -128,7 +143,7 @@ app.innerHTML = `
 const el = Object.fromEntries([
   'fileInput','dropzone','pageGrid','selectionBar','selectionCount','pageCount','sizeText','warningText',
   'undoBtn','redoBtn','exportBtn','filename','toast','separatorDialog','separatorTitle','separatorSubtitle',
-  'addSeparatorBtn','previewDialog','previewImage','previewLabel','pageNumbers','a4Normalize','modeGate','editorDialog',
+  'addSeparatorBtn','splitDialog','splitSummary','splitSelectedPdf','exportJpg','exportPng','previewDialog','previewImage','previewLabel','pageNumbers','a4Normalize','modeGate','editorDialog',
   'editorCanvas','cropBox','editorPageLabel','closeEditor','applyEditor','editColor','editWidth','editOpacity','editText','textOption','cropOptions','resetCrop','confirmCrop','clearEdits','finalPreview','exportEdited','editorStatus'
 ].map(id => [id, document.getElementById(id)]));
 
@@ -558,14 +573,14 @@ function setBusy(busy, message = '') {
   updateStats();
 }
 
-async function exportPdf() {
-  if (!state.pages.length) return;
+async function exportPdf(pages = state.pages, filename = el.filename.value) {
+  if (!pages.length) return;
   setBusy(true, 'PDFを組み立てています…');
   try {
     const output = await PDFDocument.create();
     const cache = new Map();
     const font = await output.embedFont(StandardFonts.Helvetica);
-    for (const pageData of state.pages) {
+    for (const pageData of pages) {
       let page;
       if (pageData.kind === 'source') {
         const source = state.sources.get(pageData.sourceId);
@@ -618,13 +633,82 @@ async function exportPdf() {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = sanitizeFilename(el.filename.value);
+    anchor.download = sanitizeFilename(filename);
     anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
     showToast('完成！PDFを書き出しました');
   } catch (error) {
     console.error(error);
     showToast('PDFの書き出しに失敗しました', 'error');
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function exportSelectedPdf() {
+  const pages = state.pages.filter(page => state.selected.has(page.id));
+  if (!pages.length) return showToast('PDFにするページを選択してください', 'warn');
+  const original = el.filename.value;
+  const base = original.replace(/\\.pdf$/i, '');
+  await exportPdf(pages, `${base}_分割.pdf`);
+}
+
+async function exportPageImage(format) {
+  const page = state.pages.find(p => state.selected.has(p.id)) || state.pages[0];
+  if (!page) return showToast('先にPDFまたは画像を追加してください', 'warn');
+
+  setBusy(true, `${format.toUpperCase()}を作っています…`);
+  try {
+    let dataUrl;
+    if (page.kind === 'source') {
+      const source = state.sources.get(page.sourceId);
+      if (page.annotations?.length || page.crop) {
+        dataUrl = await renderEditedPage(page, source);
+      } else if (source.kind === 'pdf') {
+        const pdf = await pdfjsLib.getDocument({ data: source.bytes.slice() }).promise;
+        const pdfPage = await pdf.getPage(page.sourcePageIndex + 1);
+        const viewport = pdfPage.getViewport({ scale: 2.2, rotation: page.rotation });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        await pdfPage.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+        dataUrl = format === 'png' ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.92);
+        await pdf.destroy();
+      } else {
+        const blob = new Blob([source.bytes], { type: source.mime });
+        const url = URL.createObjectURL(blob);
+        const image = await loadImage(url);
+        const canvas = document.createElement('canvas');
+        const turned = page.rotation % 180 !== 0;
+        canvas.width = turned ? image.height : image.width;
+        canvas.height = turned ? image.width : image.height;
+        const ctx = canvas.getContext('2d');
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate(page.rotation * Math.PI / 180);
+        ctx.drawImage(image, -image.width / 2, -image.height / 2);
+        dataUrl = format === 'png' ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.92);
+        URL.revokeObjectURL(url);
+      }
+    } else {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1240; canvas.height = 1754;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      if (page.kind === 'separator') {
+        const image = await loadImage(makeSeparatorPng(page.title, page.subtitle));
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      }
+      dataUrl = format === 'png' ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.92);
+    }
+
+    const anchor = document.createElement('a');
+    anchor.href = dataUrl;
+    anchor.download = `PAPER-PUNCH-${String(state.pages.indexOf(page) + 1).padStart(2,'0')}.${format === 'png' ? 'png' : 'jpg'}`;
+    anchor.click();
+    showToast(`${format.toUpperCase()}を書き出しました`);
+  } catch (error) {
+    console.error(error);
+    showToast(`${format.toUpperCase()}の書き出しに失敗しました`, 'error');
   } finally {
     setBusy(false);
   }
@@ -733,6 +817,12 @@ document.querySelectorAll('[data-action]').forEach(button => button.addEventList
   if (action === 'delete') deleteSelected();
   if (action === 'separator') openSeparatorDialog();
   if (action === 'blank') addBlank();
+  if (action === 'split') {
+    el.splitSummary.textContent = state.selected.size
+      ? `${state.selected.size}ページ選択中。選択ページをPDFにできます。`
+      : 'ページを選択すると、そのページだけを書き出せます。';
+    el.splitDialog.showModal();
+  }
   if (action === 'edit') {
     const page = state.pages.find(item => state.selected.has(item.id)) || state.pages[0];
     if (page) openEditor(page, state.pages.indexOf(page)); else showToast('先にPDFまたは画像を追加してください', 'warn');
@@ -750,6 +840,9 @@ el.undoBtn.addEventListener('click', undo);
 el.redoBtn.addEventListener('click', redo);
 el.exportBtn.addEventListener('click', exportPdf);
 el.addSeparatorBtn.addEventListener('click', event => { event.preventDefault(); addSeparator(); el.separatorDialog.close(); });
+el.splitSelectedPdf.addEventListener('click', async () => { el.splitDialog.close(); await exportSelectedPdf(); });
+el.exportJpg.addEventListener('click', async () => { el.splitDialog.close(); await exportPageImage('jpg'); });
+el.exportPng.addEventListener('click', async () => { el.splitDialog.close(); await exportPageImage('png'); });
 document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => { setMascot('action', { hold: 1200 }); setMode(button.dataset.mode); }));
 document.querySelectorAll('[data-switch]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.switch)));
 document.querySelectorAll('[data-edit-tool]').forEach(button => button.addEventListener('click', () => {
