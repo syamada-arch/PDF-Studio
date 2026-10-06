@@ -789,13 +789,15 @@ async function compressPdf() {
   try {
     const output=await PDFDocument.create();
     for (const pageData of state.pages) {
-      const page=output.addPage([595.28,841.89]);
       const canvas=await renderPageForPdfImage(pageData,scale*1.8);
-      const ratio=Math.min(559/canvas.width,805/canvas.height);
-      const w=canvas.width*ratio, h=canvas.height*ratio;
+      const maxPage=841.89;
+      const pageScale=Math.min(maxPage/canvas.width, maxPage/canvas.height);
+      const pw=Math.max(72, canvas.width*pageScale);
+      const ph=Math.max(72, canvas.height*pageScale);
+      const page=output.addPage([pw,ph]);
       const jpg=canvas.toDataURL('image/jpeg',quality);
       const embedded=await output.embedJpg(jpg);
-      page.drawImage(embedded,{x:(595.28-w)/2,y:(841.89-h)/2,width:w,height:h});
+      page.drawImage(embedded,{x:0,y:0,width:pw,height:ph});
     }
     const bytes=await output.save({useObjectStreams:true, addDefaultPage:false});
     const blob=new Blob([bytes],{type:'application/pdf'});
