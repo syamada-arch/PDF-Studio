@@ -802,7 +802,10 @@ async function compressPdf() {
 
 async function exportPdf(pages = state.pages, filename = el.filename.value) {
   if (!pages.length) return;
+  const cleanName = sanitizeFilename(filename || 'PAPER-PUNCH.pdf').replace(/\.pdf$/i,'') || 'PAPER-PUNCH';
+  filename = cleanName + '.pdf';
   setBusy(true, 'PDFを組み立てています…');
+  setMascot('work');
   try {
     const output = await PDFDocument.create();
     const cache = new Map();
@@ -864,10 +867,12 @@ async function exportPdf(pages = state.pages, filename = el.filename.value) {
     anchor.download = sanitizeFilename(filename);
     anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
-    showToast('完成！PDFを書き出しました');
+    setMascot('done', { hold: 1500 });
+    showToast(`完成！ ${filename} を保存しました`);
   } catch (error) {
     console.error(error);
-    showToast('PDFの書き出しに失敗しました', 'error');
+    setMascot('error', { hold: 1800 });
+    showToast('PDFの書き出しに失敗しました。元ファイルは変更されていません。', 'error');
   } finally {
     setBusy(false);
   }
