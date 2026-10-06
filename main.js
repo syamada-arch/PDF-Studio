@@ -505,7 +505,17 @@ function makeCard(page, index) {
     if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleSelect(page.id, event.ctrlKey || event.metaKey || event.shiftKey); }
     if (event.key === 'Delete' || event.key === 'Backspace') deleteSelected();
   });
-  card.addEventListener('dragstart', event => { state.dragId = page.id; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', page.id); card.classList.add('dragging'); });
+  card.addEventListener('dragstart', event => {
+    state.dragId = page.id;
+    if (!state.selected.has(page.id)) {
+      state.selected.clear();
+      state.selected.add(page.id);
+      renderSelection();
+    }
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', page.id);
+    card.classList.add('dragging');
+  });
   card.addEventListener('dragend', () => { state.dragId = null; card.classList.remove('dragging'); clearDragStyles(); });
   card.addEventListener('dragover', event => { event.preventDefault(); if (state.dragId !== page.id) card.classList.add('magnet-target'); });
   card.addEventListener('dragleave', () => card.classList.remove('magnet-target'));
@@ -516,12 +526,21 @@ function makeCard(page, index) {
     const to = state.pages.findIndex(item => item.id === page.id);
     if (from < 0 || to < 0 || from === to) return clearDragStyles();
     snapshot();
-    const [moved] = state.pages.splice(from, 1);
-    state.pages.splice(to, 0, moved);
+    const movingIds = state.selected.has(state.dragId)
+      ? new Set(state.selected)
+      : new Set([state.dragId]);
+    const moving = state.pages.filter(item => movingIds.has(item.id));
+    const remaining = state.pages.filter(item => !movingIds.has(item.id));
+    const targetOriginalIndex = state.pages.findIndex(item => item.id === page.id);
+    const removedBeforeTarget = state.pages.slice(0, targetOriginalIndex).filter(item => movingIds.has(item.id)).length;
+    let insertAt = targetOriginalIndex - removedBeforeTarget;
+    insertAt = Math.max(0, Math.min(insertAt, remaining.length));
+    remaining.splice(insertAt, 0, ...moving);
+    state.pages = remaining;
     render();
-    const target = el.pageGrid.children[to];
+    const target = el.pageGrid.children[Math.min(insertAt, el.pageGrid.children.length - 1)];
     target?.classList.add('snap-in');
-    showToast('カチッ　ページを接続しました');
+    showToast(moving.length > 1 ? `${moving.length}ページを移動しました` : 'カチッ　ページを移動しました');
   });
   return card;
 }
