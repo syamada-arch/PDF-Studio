@@ -915,7 +915,26 @@ async function getOcrWorker() {
       }
     }
   });
+  await ocrWorker.setParameters({
+    preserve_interword_spaces: '1'
+  });
   return ocrWorker;
+}
+
+function prepareOcrCanvas(sourceCanvas) {
+  const maxSide = 2400;
+  const scale = Math.min(1.35, maxSide / Math.max(sourceCanvas.width, sourceCanvas.height));
+  if (scale >= 0.99) return sourceCanvas;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(sourceCanvas.width * scale));
+  canvas.height = Math.max(1, Math.round(sourceCanvas.height * scale));
+  const ctx = canvas.getContext('2d', { alpha:false });
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
+  return canvas;
 }
 
 async function pageToCanvas(page) {
@@ -1030,9 +1049,10 @@ async function runOcr() {
     const chunks = [];
     for (let i = 0; i < pages.length; i++) {
       el.ocrProgress.textContent = `ページ ${i + 1} / ${pages.length}`;
-      const canvas = await pageToCanvas(pages[i]);
+      const canvas = prepareOcrCanvas(await pageToCanvas(pages[i]));
       const { data } = await worker.recognize(canvas);
-      chunks.push(`--- ${i + 1}ページ目 ---\\n${(data.text || '').trim()}`);
+      const text = (data.text || '').trim();
+      chunks.push(`--- ${i + 1}ページ目 ---\\n${text || '（文字を検出できませんでした）'}`);
       el.ocrResult.value = chunks.join('\\n\\n');
       el.ocrResult.scrollTop = el.ocrResult.scrollHeight;
     }
