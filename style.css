@@ -345,3 +345,17 @@ dialog{border-radius:18px;box-shadow:0 30px 100px rgba(18,20,20,.22)}
   .mode-piece{height:160px}
   .mode-intro h1{font-size:48px}
 }
+
+
+/* Home feature strip */
+.pp-feature-row{
+  display:flex;justify-content:center;align-items:center;gap:8px;
+  margin-top:24px;flex-wrap:wrap;
+}
+.pp-feature-row span{
+  padding:7px 11px;border:1px solid var(--pp-line);border-radius:999px;
+  background:rgba(255,255,255,.7);font-size:11px;font-weight:750;color:#626665;
+}
+.pp-local-note{
+  margin:0;text-align:center;font-size:11px!important;color:#989a96!important;
+}
