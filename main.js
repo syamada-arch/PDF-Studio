@@ -68,6 +68,7 @@ app.innerHTML = `
       <div id="pageGrid" class="page-grid" hidden></div>
       <div id="selectionBar" class="selection-bar" hidden>
         <strong id="selectionCount">0ページ選択中</strong>
+        <button data-selection="all">全選択</button>
         <button data-selection="rotate">↻ 回転</button>
         <button data-selection="delete">− 削除</button>
         <button data-selection="clear">選択解除</button>
@@ -80,7 +81,7 @@ app.innerHTML = `
     <div class="stats"><strong id="pageCount">全0ページ</strong><span>・</span><span id="sizeText">0 MB</span><span id="warningText" class="warning-text"></span></div>
     <button id="exportBtn" class="export-btn" disabled><span class="stack-icon">▱</span><span>PDFを書き出す</span><span>→</span></button>
   </footer>
-  <input id="fileInput" type="file" accept="application/pdf,image/jpeg,image/png" multiple hidden />
+  <input id="fileInput" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" multiple hidden />
 
   <dialog id="separatorDialog">
     <form method="dialog" class="dialog-card">
@@ -446,8 +447,22 @@ function animateLastPage() {
 }
 
 function toggleSelect(id, additive) {
-  if (!additive) state.selected.clear();
-  if (state.selected.has(id)) state.selected.delete(id); else state.selected.add(id);
+  const index = state.pages.findIndex(page => page.id === id);
+  const lastIndex = state.pages.findIndex(page => page.id === state.lastSelectedId);
+  const isRange = additive && index >= 0 && lastIndex >= 0 && state.lastSelectedId !== id && event?.shiftKey;
+  if (isRange) {
+    state.selected.clear();
+    const [start, end] = index < lastIndex ? [index, lastIndex] : [lastIndex, index];
+    state.pages.slice(start, end + 1).forEach(page => state.selected.add(page.id));
+  } else if (!additive) {
+    state.selected.clear();
+    state.selected.add(id);
+  } else if (state.selected.has(id)) {
+    state.selected.delete(id);
+  } else {
+    state.selected.add(id);
+  }
+  state.lastSelectedId = id;
   renderSelection();
 }
 
