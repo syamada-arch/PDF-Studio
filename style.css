@@ -403,3 +403,5 @@ dialog{border-radius:18px;box-shadow:0 30px 100px rgba(18,20,20,.22)}
   .correct-controls label{grid-template-columns:1fr 52px}
   .correct-controls input[type="range"]{grid-column:1 / -1}
 }
+
+.compress-size{font-variant-numeric:tabular-nums}
