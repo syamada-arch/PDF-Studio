@@ -339,9 +339,7 @@ dialog{border-radius:18px;box-shadow:0 30px 100px rgba(18,20,20,.22)}
   background-image:url('/assets/mascots.png');
   background-repeat:no-repeat;
   background-size:400% 400%;
-  background-position:
-    calc((var(--mascot-frame) % 4) * 33.333333%)
-    calc(floor(var(--mascot-frame) / 4) * 33.333333%);
+  background-position:var(--mascot-x, 0%) var(--mascot-y, 0%);
   filter:drop-shadow(0 8px 3px rgba(20,20,20,.12));
   animation:pp-mascot-float 2.8s ease-in-out infinite;
 }
