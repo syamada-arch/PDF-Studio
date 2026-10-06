@@ -461,3 +461,9 @@ dialog{border-radius:18px;box-shadow:0 30px 100px rgba(18,20,20,.22)}
 .page-card.magnet-target{transform:translateY(-5px);box-shadow:0 0 0 2px var(--pp-accent),0 14px 30px rgba(0,0,0,.08)}
 .page-card.snap-in{animation:pageSnap .32s ease-out}
 @keyframes pageSnap{0%{transform:scale(.96)}65%{transform:scale(1.025)}100%{transform:scale(1)}}
+
+/* Final interaction polish */
+.selection-bar{backdrop-filter:blur(12px);background:rgba(255,255,255,.92);box-shadow:0 10px 28px rgba(30,40,40,.10)}
+.selection-bar button{transition:transform .16s ease,background .16s ease}.selection-bar button:hover{transform:translateY(-1px);background:#f1f4f2}
+.page-card:focus-visible{outline:3px solid #82b5d8;outline-offset:7px;border-radius:12px}
+@media (prefers-reduced-motion: reduce){.page-card,.selection-bar button{transition:none!important}.page-card.snap-in{animation:none}}
