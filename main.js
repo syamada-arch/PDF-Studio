@@ -658,7 +658,8 @@ async function exportPdf(pages = state.pages, filename = el.filename.value) {
       let page;
       if (pageData.kind === 'source') {
         const source = state.sources.get(pageData.sourceId);
-        if ((pageData.annotations?.length || pageData.crop || pageData.imageAdjust?.trim || pageData.imageAdjust?.brightness !== 100 || pageData.imageAdjust?.contrast !== 100 || pageData.imageAdjust?.grayscale) && source) {
+        const hasAdjust = !!pageData.imageAdjust && (pageData.imageAdjust.trim || pageData.imageAdjust.brightness !== 100 || pageData.imageAdjust.contrast !== 100 || pageData.imageAdjust.grayscale);
+        if ((pageData.annotations?.length || pageData.crop || hasAdjust) && source) {
           const rendered = await renderEditedPage(pageData, source);
           const embeddedPng = await output.embedPng(rendered);
           const landscape = pageData.crop ? pageData.crop.orientation === 'landscape' : ((pageData.rotation % 180 === 0) ? pageData.width > pageData.height : pageData.height > pageData.width);
