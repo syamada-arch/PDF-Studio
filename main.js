@@ -51,6 +51,7 @@ app.innerHTML = `
       <button class="tool tool-sage shape-wave" data-action="split"><span>⇱</span><small>分割</small></button>
       <button class="tool tool-lilac shape-square" data-action="ocr"><span>A</span><small>OCR</small></button>
       <button class="tool tool-coral shape-key" data-action="correct"><span>✦</span><small>補正</small></button>
+      <button class="tool tool-yellow shape-step" data-action="compress"><span>↓</span><small>圧縮</small></button>
       <button class="tool tool-blue shape-round edit-only" data-action="edit"><span>✎</span><small>編集</small></button>
       <div class="dock-divider"></div>
       <label class="option-chip"><input id="pageNumbers" type="checkbox"/><span>ページ番号</span></label>
@@ -102,6 +103,25 @@ app.innerHTML = `
         <button id="exportPng" type="button" class="secondary">表示ページをPNGにする</button>
       </div>
       <p class="dialog-hint">複数ページのPDFを分けたい場合は、ページを選択して「選択ページをPDFにする」を使います。</p>
+    </form>
+  </dialog>
+
+  <dialog id="compressDialog">
+    <form method="dialog" class="dialog-card correct-card">
+      <button class="dialog-close" value="cancel" aria-label="閉じる">×</button>
+      <div class="ocr-head"><div><span class="mini-brand">PAPER PUNCH COMPRESS</span><h2>PDFを軽くする</h2></div><div id="compressSize" class="ocr-progress">準備中</div></div>
+      <p class="dialog-note">画像を含むPDFを再構成して、ファイルサイズを抑えます。元ファイルは変更しません。</p>
+      <div class="correct-controls">
+        <label>画質 <input id="compressQuality" type="range" min="45" max="95" value="75"><output id="compressQualityValue">75</output></label>
+        <label>解像度 <input id="compressScale" type="range" min="80" max="180" value="120"><output id="compressScaleValue">120</output></label>
+      </div>
+      <div class="preset-row">
+        <button type="button" id="compressSmall" class="secondary">軽量</button>
+        <button type="button" id="compressBalanced" class="secondary">バランス</button>
+        <button type="button" id="compressQualityPreset" class="secondary">高画質</button>
+      </div>
+      <div class="dialog-actions"><button id="compressRun" type="button" class="primary">圧縮して保存</button></div>
+      <p class="dialog-hint">軽量は小さく、バランスは読みやすさとの両立、高画質は画質優先です。</p>
     </form>
   </dialog>
 
@@ -176,7 +196,7 @@ app.innerHTML = `
 const el = Object.fromEntries([
   'fileInput','dropzone','pageGrid','selectionBar','selectionCount','pageCount','sizeText','warningText',
   'undoBtn','redoBtn','exportBtn','filename','toast','separatorDialog','separatorTitle','separatorSubtitle',
-  'addSeparatorBtn','splitDialog','splitSummary','splitSelectedPdf','exportJpg','exportPng','correctDialog','correctSummary','correctBrightness','correctBrightnessValue','correctContrast','correctContrastValue','correctGray','correctGrayValue','correctDocument','correctReset','correctTrim','correctApply','ocrDialog','ocrSummary','ocrProgress','ocrResult','ocrRun','ocrCopy','ocrDownload','previewDialog','previewImage','previewLabel','pageNumbers','a4Normalize','modeGate','editorDialog',
+  'addSeparatorBtn','splitDialog','splitSummary','splitSelectedPdf','exportJpg','exportPng','correctDialog','correctSummary','correctBrightness','correctBrightnessValue','correctContrast','correctContrastValue','correctGray','correctGrayValue','correctDocument','correctReset','correctTrim','correctApply','compressDialog','compressSize','compressQuality','compressQualityValue','compressScale','compressScaleValue','compressSmall','compressBalanced','compressQualityPreset','compressRun','ocrDialog','ocrSummary','ocrProgress','ocrResult','ocrRun','ocrCopy','ocrDownload','previewDialog','previewImage','previewLabel','pageNumbers','a4Normalize','modeGate','editorDialog',
   'editorCanvas','cropBox','editorPageLabel','closeEditor','applyEditor','editColor','editWidth','editOpacity','editText','textOption','cropOptions','resetCrop','confirmCrop','clearEdits','finalPreview','exportEdited','editorStatus'
 ].map(id => [id, document.getElementById(id)]));
 
@@ -647,6 +667,97 @@ function setBusy(busy, message = '') {
   updateStats();
 }
 
+function updateCompressLabels() {
+  el.compressQualityValue.textContent = el.compressQuality.value;
+  el.compressScaleValue.textContent = el.compressScale.value;
+}
+
+function setCompressPreset(kind) {
+  const values = { small:[55,90], balanced:[75,120], quality:[90,165] }[kind];
+  el.compressQuality.value=values[0];
+  el.compressScale.value=values[1];
+  updateCompressLabels();
+}
+
+async function renderPageForPdfImage(pageData, scaleFactor=1.2) {
+  const source = state.sources.get(pageData.sourceId);
+  if (!source) throw new Error('元ファイルが見つかりません');
+  let canvas;
+  if (source.kind === 'pdf') {
+    const pdf = await pdfjsLib.getDocument({ data: source.bytes.slice() }).promise;
+    const pdfPage = await pdf.getPage(pageData.sourcePageIndex + 1);
+    const viewport = pdfPage.getViewport({ scale: Math.max(.8, scaleFactor), rotation: pageData.rotation });
+    canvas=document.createElement('canvas');
+    canvas.width=Math.ceil(viewport.width); canvas.height=Math.ceil(viewport.height);
+    await pdfPage.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+    await pdf.destroy();
+  } else {
+    const blob=new Blob([source.bytes],{type:source.mime});
+    const url=URL.createObjectURL(blob);
+    const image=await loadImage(url);
+    const turned=pageData.rotation%180!==0;
+    canvas=document.createElement('canvas');
+    canvas.width=turned?image.height:image.width; canvas.height=turned?image.width:image.height;
+    const ctx=canvas.getContext('2d');
+    ctx.translate(canvas.width/2,canvas.height/2);
+    ctx.rotate(pageData.rotation*Math.PI/180);
+    ctx.drawImage(image,-image.width/2,-image.height/2);
+    URL.revokeObjectURL(url);
+  }
+  const adjust=getAdjust(pageData);
+  if (adjust.trim || adjust.brightness!==100 || adjust.contrast!==100 || adjust.grayscale) {
+    const adjusted=applyImageAdjustments(canvas,adjust);
+    const crop=adjust.trim || {x:0,y:0,w:1,h:1};
+    const trimmed=document.createElement('canvas');
+    trimmed.width=Math.max(1,Math.round(adjusted.width*crop.w));
+    trimmed.height=Math.max(1,Math.round(adjusted.height*crop.h));
+    trimmed.getContext('2d').drawImage(adjusted,crop.x*adjusted.width,crop.y*adjusted.height,adjusted.width*crop.w,adjusted.height*crop.h,0,0,trimmed.width,trimmed.height);
+    canvas=trimmed;
+  }
+  return canvas;
+}
+
+async function compressPdf() {
+  if (!state.pages.length) return showToast('先にPDFまたは画像を追加してください','warn');
+  const quality=Number(el.compressQuality.value)/100;
+  const scale=Number(el.compressScale.value)/100;
+  el.compressRun.disabled=true;
+  setBusy(true,'PDFを圧縮しています…');
+  setMascot('work');
+  try {
+    const output=await PDFDocument.create();
+    for (const pageData of state.pages) {
+      const page=output.addPage([595.28,841.89]);
+      const canvas=await renderPageForPdfImage(pageData,scale*1.8);
+      const ratio=Math.min(559/canvas.width,805/canvas.height);
+      const w=canvas.width*ratio, h=canvas.height*ratio;
+      const jpg=canvas.toDataURL('image/jpeg',quality);
+      const embedded=await output.embedJpg(jpg);
+      page.drawImage(embedded,{x:(595.28-w)/2,y:(841.89-h)/2,width:w,height:h});
+    }
+    const bytes=await output.save({useObjectStreams:true, addDefaultPage:false});
+    const blob=new Blob([bytes],{type:'application/pdf'});
+    const url=URL.createObjectURL(blob);
+    const anchor=document.createElement('a');
+    anchor.href=url;
+    const original=el.filename.value.replace(/\.pdf$/i,'');
+    anchor.download=original+'_compressed.pdf';
+    anchor.click();
+    setTimeout(()=>URL.revokeObjectURL(url),5000);
+    el.compressSize.textContent='完了';
+    setMascot('done',{hold:1600});
+    showToast('圧縮PDFを書き出しました');
+  } catch(error) {
+    console.error(error);
+    el.compressSize.textContent='エラー';
+    setMascot('error',{hold:1800});
+    showToast('PDFの圧縮に失敗しました','error');
+  } finally {
+    el.compressRun.disabled=false;
+    setBusy(false);
+  }
+}
+
 async function exportPdf(pages = state.pages, filename = el.filename.value) {
   if (!pages.length) return;
   setBusy(true, 'PDFを組み立てています…');
@@ -1048,6 +1159,12 @@ document.querySelectorAll('[data-action]').forEach(button => button.addEventList
   if (action === 'correct') {
     openCorrectionDialog();
   }
+  if (action === 'compress') {
+    if (!state.pages.length) return showToast('先にPDFまたは画像を追加してください','warn');
+    el.compressSize.textContent='準備完了';
+    setCompressPreset('balanced');
+    el.compressDialog.showModal();
+  }
   if (action === 'ocr') {
     if (!state.selected.size) return showToast('OCRするページを選択してください', 'warn');
     el.ocrSummary.textContent = `${state.selected.size}ページをOCRできます。`;
@@ -1079,6 +1196,12 @@ el.redoBtn.addEventListener('click', redo);
 el.exportBtn.addEventListener('click', exportPdf);
 el.addSeparatorBtn.addEventListener('click', event => { event.preventDefault(); addSeparator(); el.separatorDialog.close(); });
 el.splitSelectedPdf.addEventListener('click', async () => { el.splitDialog.close(); await exportSelectedPdf(); });
+el.compressQuality.addEventListener('input', updateCompressLabels);
+el.compressScale.addEventListener('input', updateCompressLabels);
+el.compressSmall.addEventListener('click',()=>setCompressPreset('small'));
+el.compressBalanced.addEventListener('click',()=>setCompressPreset('balanced'));
+el.compressQualityPreset.addEventListener('click',()=>setCompressPreset('quality'));
+el.compressRun.addEventListener('click',async()=>{el.compressDialog.close();await compressPdf();});
 el.correctBrightness.addEventListener('input', updateCorrectionLabels);
 el.correctContrast.addEventListener('input', updateCorrectionLabels);
 el.correctGray.addEventListener('input', updateCorrectionLabels);
