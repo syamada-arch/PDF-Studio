@@ -725,8 +725,18 @@ function setBusy(busy, message = '') {
   state.busy = busy;
   document.body.classList.toggle('busy', busy);
   if (message) showToast(message);
+  document.body.dataset.busyMessage = message || '';
   updateHistoryButtons();
   updateStats();
+}
+
+
+function setProgress(current, total, label) {
+  const pct = total ? Math.round((current / total) * 100) : 0;
+  const message = total ? `${label} ${current} / ${total}（${pct}%）` : label;
+  document.body.dataset.progress = message;
+  const status = document.querySelector('.busy-message, #busyMessage');
+  if (status) status.textContent = message;
 }
 
 function updateCompressLabels() {
@@ -788,7 +798,10 @@ async function compressPdf() {
   setMascot('work');
   try {
     const output=await PDFDocument.create();
-    for (const pageData of state.pages) {
+    for (let pageIndex = 0; pageIndex < state.pages.length; pageIndex++) {
+      const pageData = state.pages[pageIndex];
+      setProgress(pageIndex + 1, state.pages.length, 'PDFを圧縮中');
+      await new Promise(resolve => setTimeout(resolve, 0));
       const canvas=await renderPageForPdfImage(pageData,scale*1.8);
       const maxPage=841.89;
       const pageScale=Math.min(maxPage/canvas.width, maxPage/canvas.height);
@@ -832,7 +845,10 @@ async function exportPdf(pages = state.pages, filename = el.filename.value) {
     const output = await PDFDocument.create();
     const cache = new Map();
     const font = await output.embedFont(StandardFonts.Helvetica);
-    for (const pageData of pages) {
+    for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+      const pageData = pages[pageIndex];
+      setProgress(pageIndex + 1, pages.length, 'PDFを書き出し中');
+      await new Promise(resolve => setTimeout(resolve, 0));
       let page;
       if (pageData.kind === 'source') {
         const source = state.sources.get(pageData.sourceId);
