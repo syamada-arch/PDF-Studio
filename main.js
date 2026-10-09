@@ -1073,8 +1073,8 @@ async function runOcr() {
       const canvas = prepareOcrCanvas(await pageToCanvas(pages[i]));
       const { data } = await worker.recognize(canvas, { rotateAuto: true });
       const text = (data.text || '').trim();
-      chunks.push(`--- ${i + 1}ページ目 ---\\n${text || '（文字を検出できませんでした）'}`);
-      el.ocrResult.value = chunks.join('\\n\\n');
+      chunks.push(`--- ${i + 1}ページ目 ---\n${text || '（文字を検出できませんでした）'}`);
+      el.ocrResult.value = chunks.join('\n\n');
       el.ocrResult.scrollTop = el.ocrResult.scrollHeight;
     }
     el.ocrSummary.textContent = `${pages.length}ページのOCRが完了しました。`;
@@ -1097,7 +1097,7 @@ async function exportSelectedPdf() {
   const pages = state.pages.filter(page => state.selected.has(page.id));
   if (!pages.length) return showToast('PDFにするページを選択してください', 'warn');
   const original = el.filename.value;
-  const base = original.replace(/\\.pdf$/i, '');
+  const base = original.replace(/\.pdf$/i, '');
   await exportPdf(pages, `${base}_分割.pdf`);
 }
 
