@@ -715,7 +715,7 @@ function beginDraw(event) {
   const point = pointerPosition(event);
   if (state.editor.tool === 'select') {
     const index=hitAnnotation(point); state.editor.selectedIndex=index;
-    if(index>=0){state.editor.moving={index,start:point,original:structuredClone(state.editor.draft[index])};el.editorCanvas.setPointerCapture(event.pointerId);}
+    if(index>=0){const original=structuredClone(state.editor.draft[index]);const b=annotationBounds(original);const resize=!!b&&Math.abs(point.x-(b.x+b.w))<.025&&Math.abs(point.y-(b.y+b.h))<.025;state.editor.moving={index,start:point,original,b,resize};el.editorCanvas.setPointerCapture(event.pointerId);}
     redrawEditor(); return;
   }
   if (state.editor.tool === 'crop') return;
@@ -732,7 +732,8 @@ function moveDraw(event) {
   if(state.editor.moving){
     const m=state.editor.moving, p=pointerPosition(event), dx=p.x-m.start.x, dy=p.y-m.start.y;
     const item=structuredClone(m.original);
-    if(item.type==='text'){item.x=Math.max(0,Math.min(1,item.x+dx));item.y=Math.max(0,Math.min(1,item.y+dy));}
+    if(m.resize&&m.b&&item.type!=='text'&&item.points?.length){const b=m.b, sx=Math.max(.15,Math.min(5,(p.x-b.x)/(m.start.x-b.x||b.w))), sy=Math.max(.15,Math.min(5,(p.y-b.y)/(m.start.y-b.y||b.h)));item.points=item.points.map(q=>({x:Math.max(0,Math.min(1,b.x+(q.x-b.x)*sx)),y:Math.max(0,Math.min(1,b.y+(q.y-b.y)*sy))}));}
+    else if(item.type==='text'){item.x=Math.max(0,Math.min(1,item.x+dx));item.y=Math.max(0,Math.min(1,item.y+dy));}
     else item.points=item.points.map(q=>({x:Math.max(0,Math.min(1,q.x+dx)),y:Math.max(0,Math.min(1,q.y+dy))}));
     state.editor.draft[m.index]=item; redrawEditor(); return;
   }
