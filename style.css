@@ -491,3 +491,10 @@ dialog{border-radius:18px;box-shadow:0 30px 100px rgba(18,20,20,.22)}
   .bottombar{height:62px;padding:8px 12px}.stats{font-size:11px}.export-btn{padding:11px 13px}
   .dialog-card{width:min(94vw,560px);max-height:88vh;overflow:auto}
 }
+/* PAPER PUNCH editor quality/zoom controls */
+.editor-stage{position:relative;overflow:auto;display:flex;align-items:center;justify-content:center;}
+.editor-stage canvas{max-width:none!important;max-height:none!important;flex:0 0 auto;}
+.editor-zoom-controls{position:sticky;top:8px;left:8px;align-self:flex-start;z-index:6;display:flex;align-items:center;gap:5px;padding:6px;background:rgba(255,255,255,.94);border:1px solid var(--pp-line,#dfe2df);border-radius:10px;box-shadow:0 3px 12px rgba(0,0,0,.08);}
+.editor-zoom-controls button{border:1px solid #d4d8d4;background:#fff;border-radius:7px;padding:5px 9px;cursor:pointer;font-size:13px;white-space:nowrap;}
+.editor-zoom-controls span{min-width:42px;text-align:center;font-size:12px;font-weight:700;}
+#editFontSize{width:100%;min-width:0;padding:8px;border:1px solid #d4d8d4;border-radius:8px;}
