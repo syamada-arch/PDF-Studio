@@ -211,7 +211,7 @@ const state = {
   nextId: 1,
   busy: false,
   mode: 'organize',
-  editor: { pageId: null, tool: 'select', draft: [], crop: null, drawing: null, zoom: 1 },
+  editor: { pageId: null, tool: 'select', draft: [], crop: null, drawing: null, zoom: 1, selectedIndex: -1, moving: null },
 };
 
 const connectorTypes = ['round','square','key','wave','step','dove','soft-zig','half'];
@@ -1207,10 +1207,11 @@ async function exportPageImage(format) {
 
 async function renderEditedPage(pageData, source) {
   const adjust = getAdjust(pageData);
-  const crop = pageData.crop || (adjust.trim || { x:0, y:0, w:1, h:1 });
-  crop.orientation = crop.orientation || (pageData.width>pageData.height?'landscape':'portrait');
-  const outW = crop.orientation === 'landscape' ? 1684 : 1190;
-  const outH = crop.orientation === 'landscape' ? 1190 : 1684;
+  const crop = pageData.crop || adjust.trim || { x:0, y:0, w:1, h:1 };
+  const landscape = pageData.rotation % 180 === 0 ? pageData.width > pageData.height : pageData.height > pageData.width;
+  const orientation = crop.orientation || (landscape ? 'landscape' : 'portrait');
+  const outW = orientation === 'landscape' ? 1684 : 1190;
+  const outH = orientation === 'landscape' ? 1190 : 1684;
   const base = document.createElement('canvas');
   if (source.kind === 'pdf') {
     const pdf = await pdfjsLib.getDocument({ data: source.bytes.slice() }).promise;
@@ -1228,10 +1229,10 @@ async function renderEditedPage(pageData, source) {
     URL.revokeObjectURL(url);
   }
   const adjusted = applyImageAdjustments(base, adjust);
+  drawAnnotations(adjusted.getContext('2d'),pageData.annotations||[],adjusted.width,adjusted.height);
   const result = document.createElement('canvas'); result.width=outW; result.height=outH;
   const resultCtx = result.getContext('2d');
   resultCtx.drawImage(adjusted,crop.x*adjusted.width,crop.y*adjusted.height,crop.w*adjusted.width,crop.h*adjusted.height,0,0,outW,outH);
-  drawAnnotations(resultCtx,pageData.annotations||[],outW,outH);
   return result.toDataURL('image/png');
 }
 
@@ -1445,10 +1446,8 @@ el.cropBox.addEventListener('pointerdown', event => {
 el.cropBox.addEventListener('pointermove', event => {
   if (!cropDrag) return; const dx=(event.clientX-cropDrag.x)/cropDrag.rect.width,dy=(event.clientY-cropDrag.y)/cropDrag.rect.height;
   if (cropDrag.resize) {
-    const screenRatio = cropDrag.start.w * cropDrag.rect.width / (cropDrag.start.h * cropDrag.rect.height);
-    let w=Math.max(.12,Math.min(1-cropDrag.start.x,cropDrag.start.w+dx)); let h=w*cropDrag.rect.width/(screenRatio*cropDrag.rect.height);
-    if (h>1-cropDrag.start.y) { h=1-cropDrag.start.y; w=h*screenRatio*cropDrag.rect.height/cropDrag.rect.width; }
-    state.editor.crop.w=w; state.editor.crop.h=h;
+    state.editor.crop.w=Math.max(.06,Math.min(1-cropDrag.start.x,cropDrag.start.w+dx));
+    state.editor.crop.h=Math.max(.06,Math.min(1-cropDrag.start.y,cropDrag.start.h+dy));
   } else {
     state.editor.crop.x=Math.max(0,Math.min(1-state.editor.crop.w,cropDrag.start.x+dx)); state.editor.crop.y=Math.max(0,Math.min(1-state.editor.crop.h,cropDrag.start.y+dy));
   }
