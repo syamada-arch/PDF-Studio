@@ -281,7 +281,6 @@ function formatBytes(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-async 
 function validateFiles(files) {
   const allowed = new Set(['application/pdf','image/jpeg','image/png','image/webp']);
   const maxSize = 100 * 1024 * 1024;
@@ -289,8 +288,8 @@ function validateFiles(files) {
   for (const file of Array.from(files || [])) {
     const ext = file.name.split('.').pop()?.toLowerCase();
     const okType = allowed.has(file.type) || ['pdf','jpg','jpeg','png','webp'].includes(ext);
-    if (!okType) { rejected.push(\`\${file.name}: 対応していない形式\`); continue; }
-    if (file.size > maxSize) { rejected.push(\`\${file.name}: 100MBを超えています\`); continue; }
+    if (!okType) { rejected.push(`${file.name}: 対応していない形式`); continue; }
+    if (file.size > maxSize) { rejected.push(`${file.name}: 100MBを超えています`); continue; }
     accepted.push(file);
   }
   return {accepted,rejected};
@@ -301,12 +300,14 @@ function formatBytes(bytes) {
   const units=['B','KB','MB','GB'];
   let value=bytes, i=0;
   while(value>=1024 && i<units.length-1){value/=1024;i++;}
-  return \`\${value.toFixed(value>=10||i===0?0:1)} \${units[i]}\`;
+  return `${value.toFixed(value>=10||i===0?0:1)} ${units[i]}`;
 }
 
-function addFiles(files) {
-  const accepted = [...files].filter(file => file.type === 'application/pdf' || ['image/jpeg','image/png'].includes(file.type));
-  if (!accepted.length) return showToast('PDF・JPEG・PNGを選んでください', 'warn');
+async function addFiles(files) {
+  const validation = validateFiles(files);
+  const accepted = validation.accepted;
+  if (validation.rejected.length) showToast(validation.rejected.slice(0, 2).join(' / '), 'warn');
+  if (!accepted.length) return showToast('PDF・JPEG・PNG・WEBPを選んでください', 'warn');
   snapshot();
   setMascot('receive');
   setBusy(true, 'ページを読み込んでいます…');
@@ -315,7 +316,7 @@ function addFiles(files) {
     for (const file of accepted) {
       const sourceId = uid('source');
       const bytes = new Uint8Array(await file.arrayBuffer());
-      if (file.type === 'application/pdf') await addPdfSource(sourceId, file, bytes);
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) await addPdfSource(sourceId, file, bytes);
       else await addImageSource(sourceId, file, bytes);
     }
     render();
