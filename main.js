@@ -1205,7 +1205,7 @@ async function exportPageImage(format) {
   }
 }
 
-async async function renderEditedPage(pageData, source) {
+async function renderEditedPage(pageData, source) {
   const adjust = getAdjust(pageData);
   const crop = pageData.crop || (adjust.trim || { x:0, y:0, w:1, h:1 });
   crop.orientation = crop.orientation || (pageData.width>pageData.height?'landscape':'portrait');
