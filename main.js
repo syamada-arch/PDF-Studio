@@ -358,7 +358,8 @@ async function renderPdfThumbnail(page) {
 async function addImageSource(sourceId, file, bytes) {
   const url = URL.createObjectURL(file);
   const image = await loadImage(url);
-  state.sources.set(sourceId, { kind: 'image', bytes, mime: file.type, name: file.name, size: file.size, width: image.naturalWidth, height: image.naturalHeight });
+  const mime = file.type || ({ jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', webp:'image/webp' }[file.name.split('.').pop()?.toLowerCase()] || 'application/octet-stream');
+  state.sources.set(sourceId, { kind: 'image', bytes, mime, name: file.name, size: file.size, width: image.naturalWidth, height: image.naturalHeight });
   state.pages.push(makePage({ sourceId, sourcePageIndex: 0, thumbnail: url, width: image.naturalWidth, height: image.naturalHeight, label: file.name }));
 }
 
@@ -762,7 +763,15 @@ async function renderPageForPdfImage(pageData, scaleFactor=1.2) {
   if (!source) throw new Error('元ファイルが見つかりません');
   const adjust = getAdjust(pageData);
   const hasEdits = !!(pageData.annotations?.length || pageData.crop || adjust.trim || adjust.brightness !== 100 || adjust.contrast !== 100 || adjust.grayscale);
-  if (hasEdits) return renderEditedPage(pageData, source);
+  if (hasEdits) {
+    const dataUrl = await renderEditedPage(pageData, source);
+    const image = await loadImage(dataUrl);
+    const editedCanvas = document.createElement('canvas');
+    editedCanvas.width = image.naturalWidth;
+    editedCanvas.height = image.naturalHeight;
+    editedCanvas.getContext('2d').drawImage(image, 0, 0);
+    return editedCanvas;
+  }
   let canvas;
   if (source.kind === 'pdf') {
     const pdf = await pdfjsLib.getDocument({ data: source.bytes.slice() }).promise;
