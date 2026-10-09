@@ -914,7 +914,7 @@ async function compressPdf() {
 }
 
 async function exportPdf(pages = state.pages, filename = el.filename.value) {
-  if (!pages.length) return;
+  if (!pages.length) return false;
   const cleanName = sanitizeFilename(filename || 'PAPER-PUNCH.pdf').replace(/\.pdf$/i,'') || 'PAPER-PUNCH';
   filename = cleanName + '.pdf';
   setBusy(true, 'PDFを組み立てています…');
@@ -993,10 +993,12 @@ async function exportPdf(pages = state.pages, filename = el.filename.value) {
     setTimeout(() => URL.revokeObjectURL(url), 5000);
     setMascot('done', { hold: 1500 });
     showToast(`完成！ ${filename} を保存しました`);
+    return true;
   } catch (error) {
     console.error(error);
     setMascot('error', { hold: 1800 });
     showToast('PDFの書き出しに失敗しました。元ファイルは変更されていません。', 'error');
+    return false;
   } finally {
     setBusy(false);
   }
@@ -1478,7 +1480,8 @@ el.finalPreview.addEventListener('click', async () => {
 el.exportEdited.addEventListener('click', async () => {
   const page=state.pages.find(p=>p.id===state.editor.pageId); if(!page) return;
   page.annotations=structuredClone(state.editor.draft); page.crop=state.editor.crop?{...state.editor.crop}:null;
-  await exportPdf(); el.editorStatus.textContent='編集済みPDFを書き出しました。続けて編集できます';
+  const exported = await exportPdf();
+  if (exported) el.editorStatus.textContent='編集済みPDFを書き出しました。続けて編集できます';
 });
 el.clearEdits.addEventListener('click', () => { state.editor.draft=[]; state.editor.crop=null; redrawEditor(); });
 el.resetCrop.addEventListener('click', () => { state.editor.crop=defaultCrop(); syncCropBox(); });
