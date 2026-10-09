@@ -1205,7 +1205,7 @@ async function exportPageImage(format) {
   }
 }
 
-async function renderEditedPage(pageData, source) {
+async async function renderEditedPage(pageData, source) {
   const adjust = getAdjust(pageData);
   const crop = pageData.crop || (adjust.trim || { x:0, y:0, w:1, h:1 });
   crop.orientation = crop.orientation || (pageData.width>pageData.height?'landscape':'portrait');
@@ -1429,6 +1429,14 @@ el.resetCrop.addEventListener('click', () => { state.editor.crop=defaultCrop(); 
 el.zoomIn.addEventListener('click', () => setEditorZoom((state.editor.zoom || 1) * 1.2));
 el.zoomOut.addEventListener('click', () => setEditorZoom((state.editor.zoom || 1) / 1.2));
 el.zoomFit.addEventListener('click', () => setEditorZoom(1));
+// Ctrl/trackpad pinch zooms the editor page instead of the browser while the pointer is over the editor.
+document.querySelector('.editor-stage').addEventListener('wheel', event => {
+  if (event.ctrlKey || event.metaKey) {
+    event.preventDefault();
+    const factor = event.deltaY < 0 ? 1.08 : 1 / 1.08;
+    setEditorZoom((state.editor.zoom || 1) * factor);
+  }
+}, { passive: false });
 el.editFontSize.addEventListener('change', () => { const item=state.editor.draft[state.editor.selectedIndex]; if(item?.type==='text'){item.fontSize=Math.max(6,Math.min(144,+el.editFontSize.value||24)); redrawEditor();} });
 let cropDrag = null;
 el.cropBox.addEventListener('pointerdown', event => {
