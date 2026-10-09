@@ -12,8 +12,8 @@ app.innerHTML = `
     <div class="mode-intro">
       <span class="mini-brand">PAPER PUNCH</span>
       <div class="mascot-stage" aria-hidden="true">
-        <div class="mascot-figure rabbit" data-mascot="rabbit"><span class="mascot-fallback">🐇</span></div>
-        <div class="mascot-figure turtle" data-mascot="turtle"><span class="mascot-fallback">🐢</span></div>
+        <div class="mascot-figure rabbit" data-mascot="rabbit"></div>
+<div class="mascot-figure turtle" data-mascot="turtle"></div   
       </div>
       <h1>PDFを、もっと自由に。</h1>
       <p>編集・OCR・変換・整理まで、ブラウザでサッと。</p>
