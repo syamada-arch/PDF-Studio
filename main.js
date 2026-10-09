@@ -789,7 +789,6 @@ async function renderPageForPdfImage(pageData, scaleFactor=1.2) {
     ctx.drawImage(image,-image.width/2,-image.height/2);
     URL.revokeObjectURL(url);
   }
-  const adjust=getAdjust(pageData);
   if (adjust.trim || adjust.brightness!==100 || adjust.contrast!==100 || adjust.grayscale) {
     const adjusted=applyImageAdjustments(canvas,adjust);
     const crop=adjust.trim || {x:0,y:0,w:1,h:1};
