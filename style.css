@@ -336,7 +336,7 @@ dialog{border-radius:18px;box-shadow:0 30px 100px rgba(18,20,20,.22)}
   --mascot-frame:0;
   position:absolute;
   width:118px;height:118px;
-  background-image:url('/riff-tuck-animation-sprites.png');
+  background-image:url('https://raw.githubusercontent.com/syamada-arch/PDF-Studio/paper-punch-v1/riff-tuck-animation-sprites.png');
   background-repeat:no-repeat;
   background-size:400% 400%;
   background-position:var(--mascot-x, 0%) var(--mascot-y, 0%);
