@@ -757,8 +757,12 @@ function setCompressPreset(kind) {
 }
 
 async function renderPageForPdfImage(pageData, scaleFactor=1.2) {
+  if (pageData.kind !== 'source') return pageToCanvas(pageData);
   const source = state.sources.get(pageData.sourceId);
   if (!source) throw new Error('元ファイルが見つかりません');
+  const adjust = getAdjust(pageData);
+  const hasEdits = !!(pageData.annotations?.length || pageData.crop || adjust.trim || adjust.brightness !== 100 || adjust.contrast !== 100 || adjust.grayscale);
+  if (hasEdits) return renderEditedPage(pageData, source);
   let canvas;
   if (source.kind === 'pdf') {
     const pdf = await pdfjsLib.getDocument({ data: source.bytes.slice() }).promise;
@@ -822,7 +826,7 @@ async function compressPdf() {
     const url=URL.createObjectURL(blob);
     const anchor=document.createElement('a');
     anchor.href=url;
-    const original=el.filename.value.replace(/\.pdf$/i,'');
+    const original=sanitizeFilename(el.filename.value.replace(/\.pdf$/i,'')) || 'PAPER-PUNCH';
     anchor.download=original+'_compressed.pdf';
     anchor.click();
     setTimeout(()=>URL.revokeObjectURL(url),5000);
