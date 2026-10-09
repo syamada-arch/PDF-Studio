@@ -211,7 +211,7 @@ const state = {
   nextId: 1,
   busy: false,
   mode: 'organize',
-  editor: { pageId: null, tool: 'select', draft: [], crop: null, drawing: null, zoom: 1, selectedIndex: -1, moving: null },
+  editor: { pageId: null, tool: 'select', draft: [], crop: null, drawing: null, zoom: 1, selectedIndex: -1, moving: null, clipboard: null },
 };
 
 const connectorTypes = ['round','square','key','wave','step','dove','soft-zig','half'];
@@ -645,6 +645,9 @@ async function renderEditorPage(page) {
   const showCropResult = state.editor.crop && state.editor.tool !== 'crop';
   const crop = state.editor.crop;
   const scaleFactor = sourceCanvas.width / Math.max(1, baseW);
+  // Draw annotations in original-page coordinates before cropping. Drawing them
+  // afterward makes every mark collapse into the cropped area.
+  drawAnnotations(sourceCanvas.getContext('2d'), state.editor.draft, sourceCanvas.width, sourceCanvas.height);
   if (showCropResult) {
     const sx = crop.x * sourceCanvas.width, sy = crop.y * sourceCanvas.height;
     const sw = crop.w * sourceCanvas.width, sh = crop.h * sourceCanvas.height;
@@ -660,7 +663,6 @@ async function renderEditorPage(page) {
   }
   canvas.style.width = `${Number(canvas.dataset.baseWidth) * (state.editor.zoom || 1)}px`;
   canvas.style.height = `${Number(canvas.dataset.baseHeight) * (state.editor.zoom || 1)}px`;
-  drawAnnotations(canvas.getContext('2d'), state.editor.draft, canvas.width, canvas.height);
   syncCropBox();
 }
 
@@ -695,10 +697,28 @@ function pointerPosition(event) {
   return { x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)) };
 }
 
+function annotationBounds(item) {
+  const pts=item.points||[];
+  if(item.type==='text') { const w=Math.max(.04,(String(item.text||'').length*(item.fontSize||24))/Math.max(1,el.editorCanvas.width)); return {x:item.x,y:item.y-.035,w:Math.min(.9,w),h:.07}; }
+  if(!pts.length)return null;
+  const xs=pts.map(p=>p.x),ys=pts.map(p=>p.y);
+  const pad=Math.max(.012,(item.width||2)/Math.max(1,el.editorCanvas.width)*2);
+  const x=Math.min(...xs),y=Math.min(...ys),x2=Math.max(...xs),y2=Math.max(...ys);
+  return {x:x-pad,y:y-pad,w:Math.max(.025,x2-x)+pad*2,h:Math.max(.025,y2-y)+pad*2};
+}
+function hitAnnotation(point) {
+  for(let i=state.editor.draft.length-1;i>=0;i--){const b=annotationBounds(state.editor.draft[i]);if(b&&point.x>=b.x&&point.x<=b.x+b.w&&point.y>=b.y&&point.y<=b.y+b.h)return i;}
+  return -1;
+}
 function beginDraw(event) {
-  if (state.editor.tool === 'select' || state.editor.tool === 'crop') return;
   if (event.pointerType === 'mouse' && event.button !== 0) return;
   const point = pointerPosition(event);
+  if (state.editor.tool === 'select') {
+    const index=hitAnnotation(point); state.editor.selectedIndex=index;
+    if(index>=0){state.editor.moving={index,start:point,original:structuredClone(state.editor.draft[index])};el.editorCanvas.setPointerCapture(event.pointerId);}
+    redrawEditor(); return;
+  }
+  if (state.editor.tool === 'crop') return;
   if (state.editor.tool === 'text') {
     const text = el.editText.value.trim(); if (!text) return showToast('追加する文字を入力してください', 'warn');
     state.editor.draft.push({ type:'text', text, x:point.x, y:point.y, color:el.editColor.value, width:+el.editWidth.value, fontSize:+el.editFontSize.value || 24, opacity:+el.editOpacity.value/100 });
@@ -709,12 +729,20 @@ function beginDraw(event) {
   el.editorCanvas.setPointerCapture(event.pointerId);
 }
 function moveDraw(event) {
+  if(state.editor.moving){
+    const m=state.editor.moving, p=pointerPosition(event), dx=p.x-m.start.x, dy=p.y-m.start.y;
+    const item=structuredClone(m.original);
+    if(item.type==='text'){item.x=Math.max(0,Math.min(1,item.x+dx));item.y=Math.max(0,Math.min(1,item.y+dy));}
+    else item.points=item.points.map(q=>({x:Math.max(0,Math.min(1,q.x+dx)),y:Math.max(0,Math.min(1,q.y+dy))}));
+    state.editor.draft[m.index]=item; redrawEditor(); return;
+  }
   const item = state.editor.drawing; if (!item) return;
   const point = pointerPosition(event);
   if (item.type === 'pen' || item.type === 'highlight') item.points.push(point); else item.points[1] = point;
   redrawEditor(item);
 }
 function endDraw() {
+  if(state.editor.moving){state.editor.moving=null;return;}
   if (!state.editor.drawing) return;
   state.editor.draft.push(state.editor.drawing); state.editor.drawing = null; redrawEditor();
 }
@@ -1408,6 +1436,13 @@ el.editorCanvas.addEventListener('pointerdown', beginDraw);
 el.editorCanvas.addEventListener('pointermove', moveDraw);
 el.editorCanvas.addEventListener('pointerup', endDraw);
 el.editorCanvas.addEventListener('pointercancel', endDraw);
+document.addEventListener('keydown', event => {
+  const tag=(event.target?.tagName||'').toLowerCase(); if(['input','textarea','select'].includes(tag)||event.target?.isContentEditable)return;
+  const idx=state.editor.selectedIndex;
+  if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='c'&&idx>=0){state.editor.clipboard=structuredClone(state.editor.draft[idx]);event.preventDefault();showToast('図形をコピーしました');}
+  else if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='v'&&state.editor.clipboard){const item=structuredClone(state.editor.clipboard);if(item.type==='text'){item.x=Math.min(.9,item.x+.03);item.y=Math.min(.95,item.y+.03);}else item.points=item.points.map(p=>({x:Math.min(1,p.x+.03),y:Math.min(1,p.y+.03)}));state.editor.draft.push(item);state.editor.selectedIndex=state.editor.draft.length-1;redrawEditor();event.preventDefault();showToast('図形を貼り付けました');}
+  else if((event.key==='Delete'||event.key==='Backspace')&&idx>=0){state.editor.draft.splice(idx,1);state.editor.selectedIndex=-1;redrawEditor();event.preventDefault();showToast('選択した図形を削除しました');}
+});
 el.closeEditor.addEventListener('click', () => el.editorDialog.close());
 el.applyEditor.addEventListener('click', applyEditor);
 el.confirmCrop.addEventListener('click', () => {
