@@ -1415,10 +1415,16 @@ el.confirmCrop.addEventListener('click', () => {
   document.querySelectorAll('[data-edit-tool]').forEach(item => item.classList.toggle('active', item.dataset.editTool === 'select'));
   el.editorStatus.textContent = '切り取り後の画面です。この状態へ文字や図を追加できます'; redrawEditor();
 });
-el.finalPreview.addEventListener('click', () => {
-  state.editor.tool = 'select'; el.cropOptions.hidden = true;
-  document.querySelectorAll('[data-edit-tool]').forEach(item => item.classList.toggle('active', item.dataset.editTool === 'select'));
-  el.editorStatus.textContent = '完成PDFと同じ切り取り・加工表示です'; redrawEditor();
+el.finalPreview.addEventListener('click', async () => {
+  const page=state.pages.find(p=>p.id===state.editor.pageId); if(!page) return;
+  try {
+    const source=state.sources.get(page.sourceId);
+    const previewPage={...page,annotations:structuredClone(state.editor.draft),crop:state.editor.crop?{...state.editor.crop}:null};
+    const dataUrl=await renderEditedPage(previewPage,source);
+    el.previewImage.src=dataUrl; el.previewLabel.textContent='完成プレビュー';
+    el.previewDialog.showModal();
+    el.editorStatus.textContent='完成プレビューを表示しています';
+  } catch(error) { console.error(error); showToast('プレビューを作成できませんでした','error'); }
 });
 el.exportEdited.addEventListener('click', async () => {
   const page=state.pages.find(p=>p.id===state.editor.pageId); if(!page) return;
