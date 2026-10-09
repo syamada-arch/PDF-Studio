@@ -694,7 +694,18 @@ function drawArrow(ctx, x1, y1, x2, y2) {
 
 function pointerPosition(event) {
   const rect = el.editorCanvas.getBoundingClientRect();
-  return { x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)) };
+  const localX = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+  const localY = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+  // The editor displays the cropped viewport, but annotations remain in the
+  // original page's normalized coordinate system.
+  if (state.editor.crop && state.editor.tool !== 'crop') {
+    const crop = state.editor.crop;
+    return {
+      x: Math.max(0, Math.min(1, crop.x + localX * crop.w)),
+      y: Math.max(0, Math.min(1, crop.y + localY * crop.h))
+    };
+  }
+  return { x: localX, y: localY };
 }
 
 function annotationBounds(item) {
@@ -715,7 +726,7 @@ function beginDraw(event) {
   const point = pointerPosition(event);
   if (state.editor.tool === 'select') {
     const index=hitAnnotation(point); state.editor.selectedIndex=index;
-    if(index>=0){const original=structuredClone(state.editor.draft[index]);const b=annotationBounds(original);const resize=!!b&&Math.abs(point.x-(b.x+b.w))<.025&&Math.abs(point.y-(b.y+b.h))<.025;state.editor.moving={index,start:point,original,b,resize};el.editorCanvas.setPointerCapture(event.pointerId);}
+    if(index>=0){const original=structuredClone(state.editor.draft[index]);const b=annotationBounds(original);const resize=!!b&&Math.abs(point.x-(b.x+b.w))<.035&&Math.abs(point.y-(b.y+b.h))<.035;state.editor.moving={index,start:point,original,b,resize};el.editorCanvas.setPointerCapture(event.pointerId);}
     redrawEditor(); return;
   }
   if (state.editor.tool === 'crop') return;
@@ -1438,6 +1449,8 @@ el.editorCanvas.addEventListener('pointermove', moveDraw);
 el.editorCanvas.addEventListener('pointerup', endDraw);
 el.editorCanvas.addEventListener('pointercancel', endDraw);
 document.addEventListener('keydown', event => {
+  // Editing shortcuts should only run while the editor dialog is open.
+  if (!el.editorDialog.open) return;
   const tag=(event.target?.tagName||'').toLowerCase(); if(['input','textarea','select'].includes(tag)||event.target?.isContentEditable)return;
   const idx=state.editor.selectedIndex;
   if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='c'&&idx>=0){state.editor.clipboard=structuredClone(state.editor.draft[idx]);event.preventDefault();showToast('図形をコピーしました');}
