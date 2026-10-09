@@ -179,13 +179,13 @@ app.innerHTML = `
           <button data-edit-tool="text" title="入力欄の文字をページに追加">T<small>文字</small></button>
           <button data-edit-tool="crop">⌗<small>A4切取</small></button>
         </aside>
-        <section class="editor-stage"><canvas id="editorCanvas"></canvas><div class="editor-mascot mascot-figure turtle" data-mascot="turtle" aria-hidden="true"><span class="mascot-fallback">🐢</span></div><div id="cropBox" class="crop-box" hidden><i></i></div></section>
+        <section class="editor-stage"><div class="editor-zoom-controls"><button type="button" id="zoomOut" aria-label="縮小">−</button><span id="zoomValue">100%</span><button type="button" id="zoomIn" aria-label="拡大">＋</button><button type="button" id="zoomFit">全体表示</button></div><canvas id="editorCanvas"></canvas><div class="editor-mascot mascot-figure turtle" data-mascot="turtle" aria-hidden="true"></div><div id="cropBox" class="crop-box" hidden><i></i></div></section>
         <aside class="editor-options">
           <label>色を選択<div class="color-row"><button type="button" data-color="#ef766d" style="--sw:#ef766d"></button><button type="button" data-color="#4c86b3" style="--sw:#4c86b3"></button><button type="button" data-color="#e7c451" style="--sw:#e7c451"></button><button type="button" data-color="#629b7d" style="--sw:#629b7d"></button><button type="button" data-color="#252a2d" style="--sw:#252a2d"></button><input id="editColor" type="color" value="#ef766d" title="自由な色"></div></label>
-          <label>太さ<input id="editWidth" type="range" min="2" max="18" value="5"></label>
+          <label id="editWidthLabel">線の太さ<input id="editWidth" type="range" min="2" max="18" value="5"></label><label id="editFontSizeLabel" hidden>文字サイズ（px）<input id="editFontSize" type="number" min="6" max="144" value="24"></label>
           <label>透明度<input id="editOpacity" type="range" min="15" max="100" value="80"></label>
           <label id="textOption" hidden>文字<input id="editText" maxlength="80" placeholder="追加する文字"></label>
-          <div id="cropOptions" hidden><strong>A4比率固定</strong><label><input type="radio" name="cropOrient" value="portrait" checked>縦A4</label><label><input type="radio" name="cropOrient" value="landscape">横A4</label><button id="resetCrop" class="soft-button">範囲をリセット</button><button id="confirmCrop" class="soft-button primary-soft">この範囲で切り取る</button></div>
+          <div id="cropOptions" hidden><strong>自由な範囲で切り取り</strong><button id="resetCrop" class="soft-button">範囲をリセット</button><button id="confirmCrop" class="soft-button primary-soft">この範囲で切り取る</button></div>
           <button id="clearEdits" class="soft-button danger">このページの加工を消す</button>
         </aside>
       </div>
@@ -198,7 +198,7 @@ const el = Object.fromEntries([
   'fileInput','dropzone','pageGrid','selectionBar','selectionCount','pageCount','sizeText','warningText',
   'undoBtn','redoBtn','exportBtn','filename','toast','separatorDialog','separatorTitle','separatorSubtitle',
   'addSeparatorBtn','splitDialog','splitSummary','splitSelectedPdf','exportJpg','exportPng','correctDialog','correctSummary','correctBrightness','correctBrightnessValue','correctContrast','correctContrastValue','correctGray','correctGrayValue','correctDocument','correctReset','correctTrim','correctApply','compressDialog','compressSize','compressQuality','compressQualityValue','compressScale','compressScaleValue','compressSmall','compressBalanced','compressQualityPreset','compressRun','ocrDialog','ocrSummary','ocrProgress','ocrResult','ocrRun','ocrCopy','ocrDownload','previewDialog','previewImage','previewLabel','pageNumbers','a4Normalize','modeGate','editorDialog',
-  'editorCanvas','cropBox','editorPageLabel','closeEditor','applyEditor','editColor','editWidth','editOpacity','editText','textOption','cropOptions','resetCrop','confirmCrop','clearEdits','finalPreview','exportEdited','editorStatus'
+  'editorCanvas','cropBox','editorPageLabel','closeEditor','applyEditor','editColor','editWidth','editOpacity','editText','textOption','cropOptions','resetCrop','confirmCrop','clearEdits','finalPreview','exportEdited','editorStatus','zoomIn','zoomOut','zoomFit','zoomValue','editFontSize','editWidthLabel','editFontSizeLabel'
 ].map(id => [id, document.getElementById(id)]));
 
 const state = {
@@ -211,7 +211,7 @@ const state = {
   nextId: 1,
   busy: false,
   mode: 'organize',
-  editor: { pageId: null, tool: 'select', draft: [], crop: null, drawing: null },
+  editor: { pageId: null, tool: 'select', draft: [], crop: null, drawing: null, zoom: 1 },
 };
 
 const connectorTypes = ['round','square','key','wave','step','dove','soft-zig','half'];
@@ -611,28 +611,55 @@ async function openEditor(page, index) {
 
 async function renderEditorPage(page) {
   const canvas = el.editorCanvas;
-  const maxW = Math.min(860, window.innerWidth - 430);
-  const maxH = Math.min(720, window.innerHeight - 190);
-  const image = await loadImage(page.thumbnail);
+  const maxW = Math.max(320, Math.min(860, window.innerWidth - 430));
+  const maxH = Math.max(260, Math.min(720, window.innerHeight - 190));
+  const source = state.sources.get(page.sourceId);
   const turned = page.rotation % 180 !== 0;
-  const sourceRatio = turned ? image.height / image.width : image.width / image.height;
-  const full = document.createElement('canvas');
-  full.width = Math.round(Math.min(maxW, maxH * sourceRatio));
-  full.height = Math.round(full.width / sourceRatio);
-  const fctx = full.getContext('2d');
-  fctx.fillStyle = '#fff'; fctx.fillRect(0, 0, full.width, full.height);
-  fctx.translate(full.width / 2, full.height / 2); fctx.rotate(page.rotation * Math.PI / 180);
-  const dw = turned ? full.height : full.width, dh = turned ? full.width : full.height;
-  fctx.drawImage(image, -dw / 2, -dh / 2, dw, dh);
-  const showCropResult = state.editor.crop && state.editor.tool !== 'crop';
-  if (showCropResult) {
-    const ratio = state.editor.crop.orientation === 'landscape' ? 297/210 : 210/297;
-    canvas.width = Math.round(Math.min(maxW, maxH * ratio)); canvas.height = Math.round(canvas.width / ratio);
-    const c = state.editor.crop;
-    canvas.getContext('2d').drawImage(full, c.x*full.width, c.y*full.height, c.w*full.width, c.h*full.height, 0, 0, canvas.width, canvas.height);
+  let sourceCanvas = document.createElement('canvas');
+  if (source?.kind === 'pdf') {
+    const pdf = await pdfjsLib.getDocument({ data: source.bytes.slice() }).promise;
+    const pdfPage = await pdf.getPage(page.sourcePageIndex + 1);
+    const base = pdfPage.getViewport({ scale: 1, rotation: page.rotation });
+    const fitScale = Math.min(maxW / base.width, maxH / base.height);
+    const renderScale = Math.max(1, fitScale * 2.5);
+    const viewport = pdfPage.getViewport({ scale: renderScale, rotation: page.rotation });
+    sourceCanvas.width = Math.ceil(viewport.width); sourceCanvas.height = Math.ceil(viewport.height);
+    await pdfPage.render({ canvasContext: sourceCanvas.getContext('2d'), viewport }).promise;
+    await pdf.destroy();
   } else {
-    canvas.width = full.width; canvas.height = full.height; canvas.getContext('2d').drawImage(full, 0, 0);
+    const blob = new Blob([source.bytes], { type: source.mime || 'image/png' });
+    const image = await loadImage(URL.createObjectURL(blob));
+    const baseW = turned ? image.naturalHeight : image.naturalWidth;
+    const baseH = turned ? image.naturalWidth : image.naturalHeight;
+    const fitScale = Math.min(maxW / baseW, maxH / baseH);
+    const renderScale = Math.max(1, fitScale * 2.5);
+    sourceCanvas.width = Math.ceil(baseW * renderScale); sourceCanvas.height = Math.ceil(baseH * renderScale);
+    const ctx = sourceCanvas.getContext('2d');
+    ctx.translate(sourceCanvas.width / 2, sourceCanvas.height / 2);
+    ctx.rotate(page.rotation * Math.PI / 180);
+    ctx.drawImage(image, -image.naturalWidth * renderScale / 2, -image.naturalHeight * renderScale / 2, image.naturalWidth * renderScale, image.naturalHeight * renderScale);
+    URL.revokeObjectURL(image.src);
   }
+  const baseW = Math.min(maxW, maxH * sourceCanvas.width / sourceCanvas.height);
+  const baseH = baseW * sourceCanvas.height / sourceCanvas.width;
+  const showCropResult = state.editor.crop && state.editor.tool !== 'crop';
+  const crop = state.editor.crop;
+  const scaleFactor = sourceCanvas.width / Math.max(1, baseW);
+  if (showCropResult) {
+    const sx = crop.x * sourceCanvas.width, sy = crop.y * sourceCanvas.height;
+    const sw = crop.w * sourceCanvas.width, sh = crop.h * sourceCanvas.height;
+    canvas.width = Math.max(1, Math.round(sw)); canvas.height = Math.max(1, Math.round(sh));
+    canvas.getContext('2d').drawImage(sourceCanvas, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    canvas.dataset.baseWidth = String(sw / scaleFactor);
+    canvas.dataset.baseHeight = String(sh / scaleFactor);
+  } else {
+    canvas.width = sourceCanvas.width; canvas.height = sourceCanvas.height;
+    canvas.getContext('2d').drawImage(sourceCanvas, 0, 0);
+    canvas.dataset.baseWidth = String(baseW);
+    canvas.dataset.baseHeight = String(baseH);
+  }
+  canvas.style.width = `${Number(canvas.dataset.baseWidth) * (state.editor.zoom || 1)}px`;
+  canvas.style.height = `${Number(canvas.dataset.baseHeight) * (state.editor.zoom || 1)}px`;
   drawAnnotations(canvas.getContext('2d'), state.editor.draft, canvas.width, canvas.height);
   syncCropBox();
 }
@@ -651,7 +678,7 @@ function drawAnnotations(ctx, annotations, width, height) {
     } else if (item.type === 'arrow' && pts.length > 1) {
       drawArrow(ctx, pts[0][0], pts[0][1], pts[1][0], pts[1][1]);
     } else if (item.type === 'text') {
-      ctx.globalAlpha = item.opacity; ctx.font = `700 ${Math.max(14, item.width * 4)}px "Noto Sans JP", sans-serif`; ctx.fillText(item.text, item.x * width, item.y * height);
+      ctx.globalAlpha = item.opacity; ctx.font = `700 ${Math.max(6, item.fontSize || item.width * 4 || 24) * (width / (Number(el.editorCanvas.dataset.baseWidth) || width))}px "Noto Sans JP", sans-serif`; ctx.fillText(item.text, item.x * width, item.y * height);
     }
     ctx.restore();
   }
@@ -674,7 +701,7 @@ function beginDraw(event) {
   const point = pointerPosition(event);
   if (state.editor.tool === 'text') {
     const text = el.editText.value.trim(); if (!text) return showToast('追加する文字を入力してください', 'warn');
-    state.editor.draft.push({ type:'text', text, x:point.x, y:point.y, color:el.editColor.value, width:+el.editWidth.value, opacity:+el.editOpacity.value/100 });
+    state.editor.draft.push({ type:'text', text, x:point.x, y:point.y, color:el.editColor.value, width:+el.editWidth.value, fontSize:+el.editFontSize.value || 24, opacity:+el.editOpacity.value/100 });
     el.editorStatus.textContent = '文字を追加しました。続けて配置できます';
     return redrawEditor();
   }
@@ -697,6 +724,8 @@ async function redrawEditor(extra) {
   if (extra) drawAnnotations(el.editorCanvas.getContext('2d'), [extra], el.editorCanvas.width, el.editorCanvas.height);
 }
 
+function setEditorZoom(value) { state.editor.zoom=Math.max(.4,Math.min(3,+value||1)); el.zoomValue.textContent=Math.round(state.editor.zoom*100)+'%'; const stage=document.querySelector('.editor-stage'); const canvas=el.editorCanvas; canvas.style.width=(Number(canvas.dataset.baseWidth)||canvas.width)*state.editor.zoom+'px'; canvas.style.height=(Number(canvas.dataset.baseHeight)||canvas.height)*state.editor.zoom+'px'; syncCropBox(); }
+
 function syncCropBox() {
   if (state.editor.tool !== 'crop') { el.cropBox.hidden = true; return; }
   el.cropBox.hidden = false;
@@ -705,11 +734,8 @@ function syncCropBox() {
   Object.assign(el.cropBox.style, { left:`${c.x*100}%`, top:`${c.y*100}%`, width:`${c.w*100}%`, height:`${c.h*100}%` });
 }
 function defaultCrop() {
-  const canvasRatio = el.editorCanvas.width / el.editorCanvas.height;
-  const portrait = document.querySelector('[name="cropOrient"]:checked')?.value !== 'landscape';
-  const target = portrait ? 210/297 : 297/210;
-  let w=.86,h=.86; if (canvasRatio > target) w = h * target / canvasRatio; else h = w * canvasRatio / target;
-  return { x:(1-w)/2, y:(1-h)/2, w, h, orientation:portrait?'portrait':'landscape' };
+  const w = .86, h = .86;
+  return { x:(1-w)/2, y:(1-h)/2, w, h };
 }
 
 function applyEditor() {
@@ -1400,7 +1426,10 @@ el.exportEdited.addEventListener('click', async () => {
 });
 el.clearEdits.addEventListener('click', () => { state.editor.draft=[]; state.editor.crop=null; redrawEditor(); });
 el.resetCrop.addEventListener('click', () => { state.editor.crop=defaultCrop(); syncCropBox(); });
-document.querySelectorAll('[name="cropOrient"]').forEach(radio => radio.addEventListener('change', () => { state.editor.crop=defaultCrop(); syncCropBox(); }));
+el.zoomIn.addEventListener('click', () => setEditorZoom((state.editor.zoom || 1) * 1.2));
+el.zoomOut.addEventListener('click', () => setEditorZoom((state.editor.zoom || 1) / 1.2));
+el.zoomFit.addEventListener('click', () => setEditorZoom(1));
+el.editFontSize.addEventListener('change', () => { const item=state.editor.draft[state.editor.selectedIndex]; if(item?.type==='text'){item.fontSize=Math.max(6,Math.min(144,+el.editFontSize.value||24)); redrawEditor();} });
 let cropDrag = null;
 el.cropBox.addEventListener('pointerdown', event => {
   event.preventDefault(); const rect=el.editorCanvas.getBoundingClientRect(); cropDrag={x:event.clientX,y:event.clientY,start:{...state.editor.crop},rect,resize:event.target.tagName==='I'}; el.cropBox.setPointerCapture(event.pointerId);
