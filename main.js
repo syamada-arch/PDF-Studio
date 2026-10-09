@@ -885,10 +885,18 @@ async function exportPdf(pages = state.pages, filename = el.filename.value) {
             page = copied;
           }
         } else {
-          const image = source.mime === 'image/png' ? await output.embedPng(source.bytes) : await output.embedJpg(source.bytes);
-          const dims = fitToA4(source.width, source.height, pageData.rotation);
-          page = output.addPage([dims.pageWidth, dims.pageHeight]);
-          page.drawImage(image, { x: dims.x, y: dims.y, width: dims.width, height: dims.height, rotate: degrees(pageData.rotation) });
+          if (source.mime === 'image/webp') {
+            const canvas = await pageToCanvas(pageData);
+            const image = await output.embedJpg(canvas.toDataURL('image/jpeg', 0.92));
+            const dims = fitToA4(canvas.width, canvas.height, 0);
+            page = output.addPage([dims.pageWidth, dims.pageHeight]);
+            page.drawImage(image, { x: dims.x, y: dims.y, width: dims.width, height: dims.height });
+          } else {
+            const image = source.mime === 'image/png' ? await output.embedPng(source.bytes) : await output.embedJpg(source.bytes);
+            const dims = fitToA4(source.width, source.height, pageData.rotation);
+            page = output.addPage([dims.pageWidth, dims.pageHeight]);
+            page.drawImage(image, { x: dims.x, y: dims.y, width: dims.width, height: dims.height, rotate: degrees(pageData.rotation) });
+          }
         }
       } else {
         page = output.addPage([595.28, 841.89]);
